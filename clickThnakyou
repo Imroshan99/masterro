@@ -1,0 +1,260 @@
+import { useSelector } from "react-redux";
+import initial from "../../../../assets/images/click2remit/initial.svg";
+import download from "../../../../assets/images/click2remit/download.svg";
+import PaymentSuccess from "../../../../assets/images/click2remit/Paymentsuccess.svg";
+import securekotak from "../../../../assets/images/click2remit/securekotak.svg";
+import C2RInvoice from "../../user/sendmoney/Invoice/C2R";
+import { useRef, useState } from "react";
+import { jsPDF } from "jspdf";
+import html2canvas from "html2canvas";
+import { useNavigate } from "react-router-dom";
+import downloadBtn from "../../../../assets/images/click2remit/download-btn.svg";
+import share from "../../../../assets/images/click2remit/share.svg";
+import { Col, Row } from "react-bootstrap";
+import Swal from "sweetalert2";
+import useHttp from "../../../../hooks/useHttp";
+import { VIAmericaTransactionAPI } from "../../../../apis/ViAmericaApi/TranscationAPI";
+import { notification, Spin } from "antd";
+import moment from "moment";
+import { PDFDownloadLink } from "@react-pdf/renderer";
+import PDFFile from "./Invoice/PDFFile";
+
+const ClickRemitBankThankYou = (props) => {
+  const navigate = useNavigate();
+  const AuthReducer = useSelector((state) => state.user);
+  const pdfRef = useRef(null);
+  const [loader, setLoader] = useState(false);
+  const txnReceiptDetail = props.state.txnReceiptDetails;
+  let sendCountry = txnReceiptDetail.sendCountry.split("-");
+  let recvCountry = txnReceiptDetail.recvCountry.split("-");
+  let sendCountryCode = sendCountry[0];
+  let sendCurrencyCode = sendCountry[1];
+  let recvCountryCode = recvCountry[0];
+  let recvCurrencyCode = recvCountry[1];
+
+  const hookCancelTransactions = useHttp(VIAmericaTransactionAPI.cancelTransactions);
+
+  // const downloadPdf = (obj) => {
+  //   html2canvas(pdfRef.current, {
+  //     windowWidth: "100%",
+  //     windowHeight: "100%",
+  //     scale: 1,
+  //   }).then((canvas) => {
+  //     const imgData = canvas.toDataURL("image/png");
+  //     const pdf = new jsPDF("p", "px", [475, 340]);
+  //     pdf.addImage(imgData, "JPEG", 0, 0);
+  //     // pdf.output('dataurlnewwindow');
+  //     pdf.save(`${txnReceiptDetail.txnRefNumber}.pdf`);
+  //   });
+  // };
+  const cancelTransactions = (rgtn) => {
+    Swal.fire({
+      text: "Are you sure you want to cancel this transaction?",
+      showCancelButton: true,
+      denyButtonText: `Cancel`,
+      confirmButtonText: "Confirm",
+      confirmButtonColor: "#2dbe60",
+    }).then((result) => {
+      if (result.isConfirmed) {
+        const payload = {
+          recordToken: "",
+          reason: "",
+          clientId: "VIAMERICAS",
+          requestType: "CANCLTXN",
+          rgtn: rgtn,
+          userId: AuthReducer.userID,
+        };
+        setLoader((prevState) => prevState + 1);
+        hookCancelTransactions.sendRequest(payload, function (data) {
+          setLoader((prevState) => prevState - 1);
+          if (data.status == "S") {
+            navigate("/transactions");
+            notification.success({ message: data.message });
+          } else {
+            notification.error({ message: data.errorMessage?data.errorMessage:"Cancel transaction" });
+          }
+        });
+      } else if (result.isDenied) {
+        Swal.fire("Changes are not saved", "", "info");
+      }
+    });
+  };
+  const bookingDateDiff = (record) => {
+    let diffTime = moment(new Date()).diff(new Date(record.bookingDate));
+    let duration = moment.duration(diffTime);
+    let asMinutes = duration.asMinutes();
+    return asMinutes;
+  };
+
+  return (
+    <>
+      {/* <C2RInvoice pdfRef={pdfRef} txnReceiptDetail={txnReceiptDetail} /> */}
+      <div className="container h-100">
+        <div className="row h-100 justify-content-center">
+          <div className="align-self-center col-lg-7 col-md-7 col-sm-12  " style={{marginRight:"auto"}}>
+            <div className="CR-default-box CR-max-width-620">
+              <Spin spinning={loader}>
+                <ul className="row CR-side-space">
+                  <li className="text-center">
+                    <img src={PaymentSuccess} style={{ marginBottom: "30px" }} alt="" />
+                  </li>
+                  <li className="col-md-12 col-sm-12 col-lg-12 mb-4">
+                    <h4 className="text-black text-center">Thank You!</h4>
+                  </li>
+                  <li className="col-md-12 col-sm-12 col-lg-12">
+                    <p className="text-center">
+                      {/* Please fund the Kotak Bank Account with the following details. */}
+                      Your transaction request is received.
+                    </p>
+                  </li>
+                  <li className="d-flex justify-content-end">
+                    <div className="d-flex gap-4">
+                      {/* <img width={23} height={23} src={share} alt="share" /> */}                     
+                      <PDFDownloadLink
+                            document={<PDFFile txnReceiptDetail={txnReceiptDetail} />}
+                            filename="C2R"
+                          >
+                            {({ loading }) =>
+                              loading ? (
+                                <span>loading....</span>
+                              ) : (
+                                <img
+                                // onClick={downloadPdf}
+                                style={{ cursor: "pointer" }}
+                                width={23}
+                                height={23}
+                                src={downloadBtn}
+                                alt="download-btn"
+                              />
+                              )
+                            }
+                      </PDFDownloadLink>
+                    </div>
+                    {/* <button
+                          type="button"
+                          onClick={downloadPdf}
+                          className="text-black text-center"
+                        >
+                          download
+                        </button> */}
+                  </li>
+                  <li className="text-center col-md-12 col-sm-12 col-lg-12 d-flex justify-content-center mb-3">
+                    <div className="user-initials-icon">{props.state.recvNameInitials}</div>
+                  </li>
+                  <li className="col-md-12 col-sm-12 col-lg-12  d-flex justify-content-center">
+                    <p
+                      className="text-black text-center"
+                      style={{ fontSize: "28px", opacity: "87%" }}
+                    >{` ${sendCurrencyCode}`}</p>
+                    &nbsp;
+                    <h2
+                      style={{ fontSize: "32px", fontWeight: "700px" }}
+                    >{`${txnReceiptDetail.amountPayable} `}</h2>
+                  </li>
+
+                  {/* <li className="col-md-12 col-sm-12 col-lg-12 mt-3">
+                <h4 className="text-black text-center">
+                  {" "}
+                  {` ${AuthReducer.sendCountry} ${txnReceiptDetail.amountPayable} `}
+                </h4>
+              </li> */}
+                  <li className="text-center">
+                    <img src={securekotak} style={{ marginBottom: "30px" }} alt="" />
+                  </li>
+                  <li className="col-md-12 col-sm-12 col-lg-12 my-3">
+                    <div className="align-items-center d-flex justify-content-between CR-border-bottom">
+                      <label className="CR-font-16 text-left">Folio Number</label>
+                      <p className="CR-font-16 text-right CR-black-text CR-fw-500">
+                        {txnReceiptDetail.viaFolio}
+                      </p>
+                    </div>
+                  </li>
+                  <li className="col-md-12 col-sm-12 col-lg-12 my-3">
+                    <div className="align-items-center d-flex justify-content-between CR-border-bottom">
+                      <label className="CR-font-16 text-left">TransactionID</label>
+                      <p className="CR-font-16 text-right CR-black-text CR-fw-500">
+                        {txnReceiptDetail.txnRefNumber}
+                      </p>
+                    </div>
+                  </li>
+                  <li className="col-md-12 col-sm-12 col-lg-12 my-3">
+                    <div className="align-items-center d-flex justify-content-between CR-border-bottom">
+                      <label className="CR-font-16 text-left">Transaction Date</label>
+                      <p className="CR-font-16 text-right CR-black-text CR-fw-500">
+                        {txnReceiptDetail.bookingDate}
+                      </p>
+                    </div>
+                  </li>
+                  <li className="col-md-12 col-sm-12 col-lg-12 my-3">
+                    <div className="align-items-center d-flex justify-content-between CR-border-bottom">
+                      <label className="CR-font-16 text-left">Status</label>
+                      <p className="CR-font-16 text-right CR-black-text CR-fw-500">
+                        {txnReceiptDetail.transactionStatus}
+                      </p>
+                    </div>
+                  </li>
+                  <li className="col-md-12 col-sm-12 col-lg-12 my-3">
+                    <div className="align-items-center d-flex justify-content-between CR-border-bottom">
+                      <label className="CR-font-16 text-left">Transfer Amount</label>
+                      <p className="CR-font-16 text-right CR-black-text CR-fw-500">
+                        {` ${sendCurrencyCode} ${txnReceiptDetail.amountPayable} `}
+                      </p>
+                    </div>
+                  </li>
+                  <li className="col-md-12 col-sm-12 col-lg-12 my-3">
+                    <div className="align-items-center d-flex justify-content-between CR-border-bottom">
+                      <label className="CR-font-16 text-left">Transfer Fees</label>
+                      <p className="CR-font-16 text-right CR-black-text CR-fw-500">
+                        {sendCurrencyCode}&nbsp;{txnReceiptDetail.fee}
+                      </p>
+                    </div>
+                  </li>
+                  <li className="col-md-12 col-sm-12 col-lg-12 my-3">
+                    <div className="align-items-center d-flex justify-content-between CR-border-bottom">
+                      <label className="CR-font-16 text-left">Total Amount Transfer</label>
+                      <p className="CR-font-16 text-right CR-black-text CR-fw-500">
+                        {`${sendCurrencyCode}`}{" "}
+                        {txnReceiptDetail.amountPayable - txnReceiptDetail.fee}
+                      </p>
+                    </div>
+                  </li>
+                </ul>
+
+                {/* <div className="bottom_panel"> */}
+                <div className="text-center p-4 proceedbtnwidth">
+                  <Row>
+                    <Col md={6} className="mb-md-0 mb-3">
+                      {bookingDateDiff(txnReceiptDetail) <= 30 && (
+                        <>
+                          {txnReceiptDetail.txnStatusCode !== "301" && (
+                            <button
+                              className="CR-primary-btn"
+                              onClick={() => cancelTransactions(txnReceiptDetail.rgtn)}
+                            >
+                              Cancel
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </Col>
+                    <Col md={6}>
+                      <button
+                        className="CR-primary-btn mb-3"
+                        onClick={() => props.setState({isStep:1})}
+                      >
+                        New Transfer
+                      </button>
+                    </Col>
+                  </Row>
+                </div>
+                {/* </div> */}
+              </Spin>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
+export default ClickRemitBankThankYou;
