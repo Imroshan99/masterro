@@ -1,0 +1,1003 @@
+/* eslint-disable jsx-a11y/alt-text */
+import React, { useEffect, useReducer, useState } from "react";
+import BackArrow from "../../../../assets/images/click2remit/Back_arrow.svg";
+import CreateRemitterAccount from "../../BankAccounts/CreateRemitterAccount";
+import CreateAccountStepper from "../../Registration/CreateAccountStepper";
+import bank1png from "../../../../assets/images/click2remit/bank-1.png";
+import Chevronright from "../../../../assets/images/click2remit/Chevronright.svg";
+import CustomInput from "../../../../reusable/CustomInput";
+import FloatInput from "../../../../reusable/FloatInput";
+import "../../Pages/sendmoney.scss";
+import {
+  AutoComplete,
+  Card,
+  Checkbox,
+  Col,
+  Form,
+  Input,
+  notification,
+  Row,
+  Select,
+  Modal,
+} from "antd";
+import { useDispatch, useSelector } from "react-redux";
+import useHttp from "../../../../hooks/useHttp";
+import { ReceiverAPI } from "../../../../apis/ReceiverAPI";
+import { GuestAPI } from "../../../../apis/GuestAPI";
+import { BankAccountAPI } from "../../../../apis/BankAccountAPI";
+import moment from "moment";
+import Spinner from "../../../../reusable/Spinner";
+import { VIAmericaTransactionAPI } from "../../../../apis/ViAmericaApi/TranscationAPI";
+import { TransactionAPI } from "../../../../apis/TransactionAPI";
+import { achBankAccountAPI } from "../../../../apis/achBankAccountAPI";
+import Bottom_Right from "../../../../assets/images/click2remit/bottom_right.svg";
+import Top_Left from "../../../../assets/images/click2remit/top_left.svg";
+import US_Flag from "../../../../assets/images/flags/usd.png";
+import UK_Flag from "../../../../assets/images/flags/GB.png";
+import IN_Flag from "../../../../assets/images/flags/inr.png";
+import { flags } from "../../../../services/utility/flags";
+import { COUNTRY } from "../../../../services/Country";
+import {
+  setKycDoneFrmTxnValidate,
+  setSendCountryCode,
+  setSendCurrencyCode,
+} from "../../../../reducers/userReducer";
+import { ConsoleSqlOutlined } from "@ant-design/icons";
+import TermsandConditions from "../../Pages/TermsandConditions";
+import { useNavigate, useLocation } from "react-router-dom";
+import HelpIcon from "@mui/icons-material/Help";
+import AddIcon from "@mui/icons-material/Add";
+import Swal from "sweetalert2";
+
+const { Option } = Select;
+const NewTransaction = (props) => {
+  const location = useLocation();
+  const [form] = Form.useForm();
+  const dispatch = useDispatch();
+  const AuthReducer = useSelector((state) => state.user);
+  const defaultSettings = AuthReducer.groupIdSettings.default;
+  const navigate = useNavigate();
+  const hookSubPurposeLists = useHttp(TransactionAPI.subPurposeLists);
+  const hookViaAddReceiver = useHttp(VIAmericaTransactionAPI.ViaAddReceiver);
+  const hookCountryList = useHttp(GuestAPI.countryList);
+  const hookViewRecipientsDetails = useHttp(ReceiverAPI.viewRecipientsDetails);
+  const hookKotakBnkAccEnquiry = useHttp(BankAccountAPI.kotakBnkAccEnquiry);
+  const hookAddConsent = useHttp(GuestAPI.addConsent);
+
+  const [timeoutId, setTimeoutId] = useState("");
+  const [state, setState] = useReducer((state, newState) => ({ ...state, ...newState }), {
+    recipientRequestLists: [],
+    amountError: false,
+    // totalFee: 0,
+    //   exRate: 0,
+    countryList: [],
+    // loading: false,
+    receiverCountryList: [],
+    _purposeCode: "",
+    recvCountryCode: AuthReducer.recvCountryCode,
+    recvCurrencyCode: AuthReducer.recvCurrencyCode,
+    sendCountryCode: AuthReducer.sendCountryCode,
+    sendCurrencyCode: AuthReducer.sendCurrencyCode,
+    tncModal: false,
+    tncCheck: false,
+    tncVal: false,
+    formObj: {},
+  });
+  // useEffect(() => {
+  //   const timeOutId = setTimeout(() => {
+  //     if (props.state.sendAmount >= 1) {
+  //       props.onCallComputeExchangeRates(
+  //         "SENDMONEY",
+  //         props.state.isDenefit,
+  //         props.state.promoCode,
+  //         props.state.sendAmount,
+  //       );
+  //     } else {
+  //       //  alert('Please enter valid amount')
+  //       // setState({
+  //       //   amountError : true
+  //       // })
+  //     }
+  //   }, 500);
+  //   return () => clearTimeout(timeOutId);
+  // }, [props.state.sendAmount]);
+  useEffect(() => {
+    if (
+      location?.state?.autoFill &&
+      // props.state.bankAccountLists.length !== 0 &&
+      props.state.receiverLists.length !== 0 &&
+      props.state.purposeLists.length !== 0 &&
+      props.state.sourceOFFundLists.length !== 0
+    ) {
+      formAutoFill(location?.state?.autoFillData);
+    }
+  }, [
+    props.state.bankAccountLists,
+    props.state.receiverLists,
+    props.state.purposeLists,
+    props.state.sourceOFFundLists,
+  ]);
+  useEffect(() => {
+    if (state.tncCheck) {
+      setState({ tncVal: false });
+    }
+  }, [state.tncCheck]);
+
+  useEffect(() => {
+    getCountryList();
+  }, []);
+  useEffect(() => {
+    autofillPurpose(state._purposeCode);
+  }, [state._purposeCode]);
+  const receiverInfo = (nickName, recordToken) => {
+    const payload = {
+      requestType: "RECEIVERINFO",
+      userId: AuthReducer.userID,
+      nickName: nickName,
+      recordToken: recordToken,
+    };
+    props.setLoader((prevState) => prevState + 1);
+    hookViewRecipientsDetails.sendRequest(payload, function (data) {
+      props.setLoader((prevState) => prevState - 1);
+      if (data.status === "S") {
+        navigate("/view-beneficiary", {
+          state: {
+            receiverData: data,
+            receiverLists: props.state.receiverLists,
+            fromPage: "/new-transaction",
+          },
+        });
+      } else {
+        notification.error({
+          message: data.errorMessage ? data.errorMessage : "View recipients details failed.",
+        });
+      }
+    });
+  };
+  const getCountryList = () => {
+    const payload = { requestType: "COUNTRYLIST" };
+    props.setLoader((prevState) => prevState + 1);
+    hookCountryList.sendRequest(payload, function (data) {
+      props.setLoader((prevState) => prevState - 1);
+
+      if (data.status === "S") {
+        setState({
+          countryList: data.responseData,
+        });
+      }
+    });
+  };
+  const handleChangeRecipent = (rec) => {
+    if (rec === "addbene") {
+      props.setState({
+        receiverName: "",
+        receiverAccount: "",
+        nickName: "",
+        receiverBankName: "",
+        recvUnmaskedAccNo: "",
+        formObj: { ...state.formObj, recipient: null },
+      });
+      navigate("/my-beneficiary", {
+        state: {
+          // benificary: 7,
+          autoFillData: state.formObj,
+          autoFill: true,
+          pathname: "/new-transaction",
+        },
+      });
+    } else {
+      setState({ formObj: { ...state.formObj, recipient: rec } });
+      let recipent = JSON.parse(rec);
+      if (recipent.viaRecipientUuid == "") {
+        const payload = {
+          requestType: "RECEIVERINFO",
+          userId: AuthReducer.userID,
+          nickName: recipent.nickName,
+          recordToken: recipent.recordToken,
+        };
+        props.setLoader((prevState) => prevState + 1);
+        hookViewRecipientsDetails.sendRequest(payload, function (data) {
+          props.setLoader((prevState) => prevState - 1);
+          if (data.status === "S") {
+            Swal.fire({
+              // title: "Success",
+              text: "Beneficiary details are missing please click ok to modify",
+              // icon: "success",
+              confirmButtonColor: "#2dbe60",
+              allowOutsideClick: false,
+            }).then((result) => {
+              if (result.isConfirmed) {
+                navigate("/add-beneficiary", {
+                  state: {
+                    activeStepForm: 17,
+                    receiverData: data,
+                    loginId: props.state.userLoginId,
+                    receiverLists: recipent,
+                    fromPage: "/new-transaction",
+                  },
+                });
+              }
+            });
+          } else {
+            notification.error({
+              message: data.errorMessage ? data.errorMessage : "View recipients details failed.",
+            });
+          }
+        });
+      } else {
+        props.setState({
+          receiverName: `${recipent.firstName} ${recipent.lastName}`,
+          receiverAccount: recipent.accountNo,
+          nickName: recipent.nickName,
+          receiverBankName: recipent.bankName,
+          recvUnmaskedAccNo: recipent.unMaskedAccountNo,
+          // viaRecipientUuid: recipent.viaRecipientUuid,
+        });
+        setState({ _purposeCode: recipent.purposeCode });
+      }
+    }
+  };
+  const autofillPurpose = (recipent) => {
+    props.state.purposeLists.filter((purposeData) => {
+      if (recipent == purposeData.purposeCode) {
+        props.form.setFieldsValue({ purpose: JSON.stringify(purposeData) });
+        setState({ formObj: { ...state.formObj, purpose: JSON.stringify(purposeData) } });
+        props.setState({
+          purposeName: purposeData.displayName,
+          purposeID: purposeData.purposeId,
+        });
+      }
+    });
+  };
+  const handleChangeBankAccount = (acc) => {
+    if (acc === "addbank") {
+      props.setState({
+        // sendAccId: defaultSettings.sendModeCode === "ACH" ? "" : account[0].sendAccId,
+        // achAccId:  defaultSettings.sendModeCode === "ACH" ? account.aCHAccId : "",
+        achAccId: "",
+        accountNo: "",
+        senderName: "",
+        viaIdPayment: "",
+        vendorAccessToken: "",
+        vendorAccountId: "",
+        formObj: { ...state.formObj, sourceAccount: "" },
+      });
+      navigate("/manage-remitter-accounts", {
+        state: {
+          benificary: 13,
+          autoFillData: state.formObj,
+          autoFill: true,
+          pathname: "/new-transaction",
+        },
+      });
+    } else {
+      setState({ formObj: { ...state.formObj, sourceAccount: acc } });
+      let account = props.state.bankAccountLists.filter((i) => {
+        if (i.nickName === acc) {
+          return i;
+        }
+      });
+      props.setState({
+        sendAccId: defaultSettings.sendModeCode === "ACH" ? "" : account[0].sendAccId,
+        // achAccId:  defaultSettings.sendModeCode === "ACH" ? account.aCHAccId : "",
+        achAccId: account[0].aCHAccId,
+        accountNo: account[0].accountNo,
+        senderName: account[0].accountHolderName,
+        viaIdPayment: account[0].viaIdPayment,
+        vendorAccessToken: account[0].vendorAccessToken,
+        vendorAccountId: account[0].vendorAccountId,
+      });
+      // ${rec.firstName} ${rec.lastName} ${rec.accountNo}
+    }
+  };
+
+  const onChangeSendCountry = (val) => {
+    dispatch(setSendCountryCode(val));
+    dispatch(setSendCurrencyCode(COUNTRY[val].countryCurrency));
+  };
+  const handleChangePurpose = (purpose) => {
+    setState({ formObj: { ...state.formObj, purpose: purpose } });
+    let pur = JSON.parse(purpose);
+    props.setState({ purposeName: pur.displayName, purposeID: pur.purposeId });
+    // if (pur.isDeclarationReq == "Y") {
+    //   // setIsModalVisible(true);
+    //   // setIsShowSubPurpose(false);
+    // } else {
+    //   const payload = {
+    //     requestType: "SubPurposeList",
+    //     keyword: "",
+    //     nickName: "175356",
+    //     purposeId: pur.purposeId,
+    //     recvCountryCode: "IN",
+    //     userId: props.state.userID,
+    //   };
+    //   props.setLoader((prevState) => prevState + 1);
+    //   hookSubPurposeLists.sendRequest(payload, function (data) {
+    //     props.setLoader((prevState) => prevState - 1);
+    //     if (data.status == "S") {
+    //       props.setState({ subPurposeLists: data.responseData });
+    //     }
+    //   });
+    // }
+  };
+  const handleChangeSourse = (sourse) => {
+    setState({ formObj: { ...state.formObj, source: sourse } });
+    let s = JSON.parse(sourse);
+    props.setState({
+      sourceFundId: s.sourceFundId,
+      sourceOfFund: s.sourceOfFund,
+    });
+  };
+
+  //autofill function can be used for request recp approve autofill, repeat transaction autofill and currently being used for post kyc autofill done from /new-transaction
+  const formAutoFill = (val) => {
+    setState({ formObj: val });
+    if (val?.purpose) {
+      props.form.setFieldsValue({
+        purpose: val.purpose,
+      });
+      let pur = JSON.parse(val?.purpose);
+      props.setState({ purposeName: pur.displayName, purposeID: pur.purposeId });
+    }
+    if (val?.recipient) {
+      props.form.setFieldsValue({
+        recipient: val.recipient,
+      });
+      let recipent = JSON.parse(val.recipient);
+      props.setState({
+        receiverName: `${recipent.firstName} ${recipent.lastName}`,
+        receiverAccount: recipent.accountNo,
+        nickName: recipent.nickName,
+        receiverBankName: recipent.bankName,
+        recvUnmaskedAccNo: recipent.unMaskedAccountNo,
+      });
+    }
+    if (val?.serviceProvider) {
+      props.form.setFieldsValue({
+        serviceProvider: val.serviceProvider,
+      });
+      props.setState({ serviceProvider: val.serviceProvider });
+    }
+    if (val?.source) {
+      props.form.setFieldsValue({
+        source: val.source,
+      });
+      let s = JSON.parse(val.source);
+      props.setState({
+        sourceFundId: s.sourceFundId,
+        sourceOfFund: s.sourceOfFund,
+      });
+    }
+    if (val?.sourceAccount) {
+      props.form.setFieldsValue({
+        sourceAccount: val.sourceAccount,
+      });
+      let account = props.state.bankAccountLists.filter((i) => {
+        if (i.nickName == val.sourceAccount) {
+          return i;
+        }
+      });
+      props.setState({
+        // sendAccId: defaultSettings.sendModeCode === "ACH" ? "" : account[0].sendAccId,
+        // achAccId:  defaultSettings.sendModeCode === "ACH" ? account.aCHAccId : "",
+        achAccId: account[0]?.aCHAccId,
+        accountNo: account[0]?.accountNo,
+        senderName: account[0]?.accountHolderName,
+        viaIdPayment: account[0]?.viaIdPayment,
+        vendorAccessToken: account[0]?.vendorAccessToken,
+        vendorAccountId: account[0]?.vendorAccountId,
+      });
+    }
+    if (val?.sendAmount) {
+      props.setState({ sendAmount: val.sendAmount });
+    }
+  };
+
+  const selectBeforeSending = (
+    <span className="SendMoney-AddonBefore">
+      <span>
+        <p>{AuthReducer.sendCurrencyCode}</p>
+        <img
+          height="12px"
+          src={require(`../../../../assets/images/flags/${flags[AuthReducer.sendCountryCode]}`)}
+        ></img>
+      </span>
+    </span>
+  );
+  const selectBeforeReceiving = (
+    <span className="SendMoney-AddonBefore">
+      <span>
+        <p>{AuthReducer.recvCurrencyCode}</p>
+        <img
+          height="12px"
+          src={require(`../../../../assets/images/flags/${flags[AuthReducer.recvCountryCode]}`)}
+        ></img>
+      </span>
+    </span>
+  );
+  const kotakBnkAccEnquiry = (values) => {
+    const payload = {
+      requestType: "KOTAKACCENQUIRY",
+      accountNo: props.state.recvUnmaskedAccNo,
+      userId: AuthReducer.userID,
+    };
+    props.setLoader((prevState) => prevState + 1);
+    hookKotakBnkAccEnquiry.sendRequest(payload, function (data) {
+      props.setLoader((prevState) => prevState - 1);
+      if (data.status === "S") {
+        if (data.statusFlag == "A" || data.statusFlag == "I" || data.statusFlag == "F") {
+          notification.success({ message: data.message });
+          if (!AuthReducer.kycFrmTxnValidate) {
+            props.viAmericaTransactionValidate({
+              sendAmount: props.state.sendAmount,
+              ...values,
+            });
+          } else {
+            props.ViaCalculateCost();
+          }
+        } else {
+          notification.error({ message: "Status flag not found" });
+        }
+      } else {
+        notification.error({
+          message: data.errorMessage ? data.errorMessage : "Kotak bank account enquiry failed.",
+        });
+      }
+    });
+  };
+  const addConsent = () => {
+    let payload = {
+      consentFrom: "POSTLOGIN",
+      requestType: "ADDCONSENT",
+      isConsentCheck: "Y",
+      fullName: `${AuthReducer.userFullName}`,
+      emailId: props.state.userEmailId,
+      mobileNo: props.state.userMobileNo,
+      userId: AuthReducer.userID,
+      countryCode: AuthReducer.regCountryCode,
+      consentType: "TRANSACTION", //consent code
+      rgtn: "",
+      consentLocation: "SEND_MONEY_PAGE", //location
+    };
+    props.setLoader((prevState) => prevState + 1);
+    hookAddConsent.sendRequest(payload, function (data) {
+      props.setLoader((prevState) => prevState - 1);
+      if (data.status == "S") {
+        // notification.success({
+        //   message: data.message,
+        // });
+      } else {
+        notification.error({
+          message: data.errorMessage ? data.errorMessage : "consent faild.",
+        });
+      }
+    });
+  };
+  return (
+    <div className="container h-100">
+      <Form
+        initialValues={{ serviceProvider: "VIA" }}
+        form={props.form}
+        onFinish={(values) => {
+          if (state.tncCheck) {
+            if (props.state.sendAmount >= 1) {
+              if (props.state.groupId == "C2R") {
+                if (AuthReducer.regCountryCode === "US") {
+                  addConsent();
+                  // props.getSenderKycDetails({ sendAmount: props.state.sendAmount, ...values });
+                  if (props.state.receiverBankName == "KOTAK MAHINDRA BANK") {
+                    kotakBnkAccEnquiry(values);
+                  } else {
+                    if (!AuthReducer.kycFrmTxnValidate) {
+                      props.viAmericaTransactionValidate({
+                        sendAmount: props.state.sendAmount,
+                        ...values,
+                      });
+                    } else {
+                      props.ViaCalculateCost();
+                      // props.ViaCalculateCost({ sendAmt: false });
+                    }
+                  }
+                } else {
+                  props.userRiskProfile();
+                }
+                // alert(props.state.groupId)
+                // props.getAchAccountLists();
+              } else {
+                // props.setState({ isStep: 2 });
+                props.userRiskProfile();
+                props.getBankAccountLists();
+                // props.viAmericaTransactionValidate();
+              }
+
+              // props.getReceiverLists();
+              // props.getPaymentOption();
+
+              // props.getSourceOFFundLists();
+            } else {
+              notification.error({
+                message: "Please enter valid amount",
+              });
+            }
+          } else {
+            setState({ tncVal: true });
+          }
+        }}
+      >
+        <div className="CR-default-box CR-max-width-620 CR-default-box-sendMoney">
+          <div className="SendMoney-Input-Container">
+            <div className="SendMoney-Input-Top-Container">
+              <h4 className="text-black CR-font-28 mb-1">Transfer Amount</h4>
+              <Select onChange={onChangeSendCountry} defaultValue={AuthReducer.sendCountryCode}>
+                {state.countryList.map((item) => {
+                  return (
+                    <Option value={item.sendCountry}>
+                      From {item.sendCountry}&nbsp;&nbsp;&nbsp;
+                      <img
+                        height="50%"
+                        src={require(`../../../../assets/images/flags/${flags[item.sendCountry]}`)}
+                        alt={item.sendCurrency}
+                        // value={item.sendCurrency}
+                      />
+                    </Option>
+                  );
+                })}
+                {/* <Option>
+                  from us <img src={UK_Flag} />{" "}
+                </Option> */}
+              </Select>
+            </div>
+            <div className="SendMoney-Input-Bottom-Container">
+              <img className="img1" src={Top_Left}></img>
+              <div className="SendMoney-Input-Bottom-Ticket-Container">
+                <div>
+                  <Input
+                    addonBefore={selectBeforeSending}
+                    type="text"
+                    step="0.01"
+                    min={0}
+                    value={props.state.sendAmount}
+                    onBlur={(e) => {
+                      if (props.loader === 0) {
+                        // props.onCallComputeExchangeRates(
+                        //   "SENDMONEY",
+                        //   props.state.isDenefit,
+                        //   props.state.promoCode,
+                        //   props.state.sendAmount,
+                        // );
+                        // if (props.state.viaIdPayment) {
+                        //   props.ViaCalculateCost({ sendAmt: true });
+                        // } else {
+                        //   props.ViaPriceQuote("IND", true);
+                        // }
+                        // if (e.target.value !== "") {
+                        //   props.ViaPriceQuote("IND", true);
+                        // }
+                      }
+                    }}
+                    onChange={(e) => {
+                      let re = /^\d*\.?\d*$/;
+                      if (re.test(e.target.value)) {
+                        // if (e.target.value !== "0") {
+                        setState({ formObj: { ...state.formObj, sendAmount: e.target.value } });
+                        props.setState({ sendAmount: e.target.value });
+                        dispatch(setKycDoneFrmTxnValidate(false));
+                        if (e.target.value !== "") {
+                          clearTimeout(timeoutId);
+                          let valueTimeOutId = setTimeout(() => {
+                            props.ViaPriceQuote("IND", true, e.target.value);
+                          }, 500);
+                          setTimeoutId(valueTimeOutId);
+                        }
+                        // if (e.target.value === "0" || e.target.value === "") {
+                        //   // setState({
+                        //   //   amountError: true,
+                        //   // });
+                        // } else {
+                        //   // setState({
+                        //   //   amountError: false,
+                        //   // });
+                        // }
+                        // }
+                      }
+                    }}
+                    // onBlur={(e) => {
+                    //   if (e.target.value !== "0") {
+                    //     props.onCallComputeExchangeRates(
+                    //       "SENDMONEY",
+                    //       props.state.isDenefit,
+                    //       props.state.promoCode,
+                    //       props.state.sendAmount,
+                    //     );
+                    //   }
+                    // }}
+                  />
+                  <div className="Country-Container">
+                    <img
+                      height="50%"
+                      src={require(`../../../../assets/images/flags/${
+                        flags[AuthReducer.sendCountryCode]
+                      }`)}
+                    />
+                    <p>1 {state.sendCurrencyCode}</p>
+                    <p>=</p>
+                    <img
+                      height="50%"
+                      src={require(`../../../../assets/images/flags/${
+                        flags[AuthReducer.recvCountryCode]
+                      }`)}
+                    ></img>
+                    <p className="d-flex align-items-center gap-2">
+                      {`${props.state.displayExRate} ${AuthReducer.recvCurrencyCode}`}
+                      <HelpIcon
+                        onClick={() => props.setIsModalVisible(true)}
+                        style={{ fontSize: "15px", cursor: "pointer" }}
+                      />
+                    </p>
+                  </div>
+                  <Input
+                    addonBefore={selectBeforeReceiving}
+                    type="number"
+                    step="0.01"
+                    disabled={true}
+                    min={0}
+                    readOnly={AuthReducer.groupId === "KCB" ? true : false}
+                    value={props.state.recvAmount}
+                    // onChange={(e) => props.setState({ recvAmount: e.target.value })}
+                    onChange={(e) => {
+                      let re = /^\d*\.?\d*$/;
+                      if (re.test(e.target.value)) {
+                        props.setState({ recvAmount: e.target.value });
+                        if (e.target.value === "0" || e.target.value === "") {
+                          // setState({
+                          //   amountError: true,
+                          // });
+                        } else {
+                          // setState({
+                          //   amountError: false,
+                          // });
+                        }
+                      }
+                    }}
+                    onBlur={() => {
+                      if (props.loader === 0) {
+                        // props.onCallComputeExchangeRates(
+                        //   "SENDMONEY",
+                        //   props.state.isDenefit,
+                        //   props.state.promoCode,
+                        //   props.state.recvAmount,
+                        //   "REVERSE",
+                        // );
+                        props.ViaPriceQuote("USA");
+                      }
+                    }}
+                  />
+                </div>
+              </div>
+              <img className="img2" src={Bottom_Right}></img>
+            </div>
+          </div>
+          <div className="container mt-3 formitemmargin">
+            {/* <CustomInput
+              name="serviceProvider"
+              placeholder="Select Service Provider"
+              label="Service Provider"
+              showLabel={false}
+              required
+            >
+              <FloatInput
+                type="select"
+                className="w-100"
+                onChange={(e) => {
+                  props.setState({ serviceProvider: e });
+                  setState({ formObj: { ...state.formObj, serviceProvider: e } });
+                }}
+                placeholder="Select Service Provider"
+                // label="select your recipient"
+                required
+              >
+                <Option value="VIA">VIAMERICAS</Option>
+              </FloatInput>
+            </CustomInput> */}
+            <CustomInput
+              name="recipient"
+              placeholder="Select Your Recipient"
+              label="Recipient"
+              showLabel={false}
+              required
+            >
+              <FloatInput
+                type="select"
+                name="recipient"
+                className="w-100"
+                onChange={handleChangeRecipent}
+                placeholder="Select Your Recipient"
+                // label="select your recipient"
+                required
+              >
+                {props.state.receiverLists.map((rec, i) => {
+                  return (
+                    <Option
+                      key={i}
+                      value={JSON.stringify(rec)}
+                    >{`${rec.firstName} ${rec.lastName} ${rec.accountNo} (${rec.bankName})`}</Option>
+                  );
+                })}
+                <Option className="d-flex align-items-center gap-3" value="addbene">
+                  <AddIcon style={{ fontSize: "14px", color: "#2D2D2D" }} />
+                  Add New Beneficiary
+                </Option>
+              </FloatInput>
+            </CustomInput>
+
+            <CustomInput
+              name="purpose"
+              label="Purpose For Transfer"
+              placeholder="Purpose For Transfer"
+              showLabel={false}
+              required
+            >
+              <FloatInput
+                type="select"
+                name="purpose"
+                className="w-100"
+                onChange={handleChangePurpose}
+                placeholder="Purpose For Transfer"
+                disabled={true}
+                required
+              >
+                {props.state.purposeLists.map((purpose, i) => {
+                  return (
+                    <Option key={i} value={JSON.stringify(purpose)}>
+                      {purpose.displayName}
+                    </Option>
+                  );
+                })}
+              </FloatInput>
+            </CustomInput>
+            <CustomInput
+              name="source"
+              placeholder="Select your Source of Funds"
+              required
+              label="Source"
+              showLabel={false}
+            >
+              <FloatInput
+                type="select"
+                name="source"
+                className="w-100"
+                onChange={handleChangeSourse}
+                placeholder="Select Source of Funds"
+                required
+              >
+                {props.state.sourceOFFundLists.map((sList, i) => {
+                  return (
+                    <Option key={i} value={JSON.stringify(sList)}>
+                      {sList.sourceOfFund}
+                    </Option>
+                  );
+                })}
+              </FloatInput>
+            </CustomInput>
+            <CustomInput
+              name="sourceAccount"
+              label="Source Account"
+              showLabel={false}
+              placeholder="select your source account"
+              required
+            >
+              <FloatInput
+                type="select"
+                name="sourceAccount"
+                className="w-100"
+                onChange={handleChangeBankAccount}
+                placeholder="Select Sender Account"
+                required
+              >
+                {props.state.bankAccountLists.map((acc, i) => {
+                  return (
+                    <Option
+                      key={i}
+                      value={acc.nickName}
+                    >{`${acc.accountHolderName} ${acc.accountNo}`}</Option>
+                  );
+                })}
+                <Option className="d-flex align-items-center gap-3" value="addbank">
+                  <AddIcon style={{ fontSize: "14px", color: "#2D2D2D" }} />
+                  Add New Source Account
+                </Option>
+              </FloatInput>
+            </CustomInput>
+            <div className="d-flex flex-column align-items-end">
+              <div className="w-100">
+                <Form.Item className="form-item" name="readTermsConditions">
+                  <Checkbox
+                    checked={state.tncCheck}
+                    onChange={(e) => setState({ tncCheck: !state.tncCheck })}
+                  >
+                    <div className="d-flex">
+                      <p>
+                        I accept all the &nbsp;
+                        <a
+                          href="javascript:void(0)"
+                          className="m-0 text-primary"
+                          onClick={() => setState({ tncModal: true })}
+                        >
+                          TERMS & CONDITIONS
+                        </a>
+                      </p>
+                    </div>
+                  </Checkbox>
+                </Form.Item>
+              </div>
+              {state.tncVal && !state.tncCheck && (
+                <p style={{ color: "red", fontSize: "0.75rem" }}>
+                  Please accept the Terms & Conditions
+                </p>
+              )}
+            </div>
+          </div>
+          {props.state.transactionLists.length !== 0 && (
+            <div style={{ padding: "0 40px 0 40px" }} className="container mt-3">
+              <div className="d-flex justify-content-between">
+                <p className="text-left mb-0 CR-font-14 CR-fw-500 ">Recent transactions</p>
+                <span onClick={() => navigate("/transactions")} className="editcolor">
+                  SEE All
+                </span>
+              </div>
+              <ul className="row">
+                {props.state.transactionLists.slice(0, 2).map((transactionData) => {
+                  let transactionDate = moment(transactionData.bookingDate).format("DD-MMMM-YYYY");
+                  return (
+                    <>
+                      <li
+                        style={{ cursor: "pointer" }}
+                        onClick={() => {
+                          navigate("/transactions", {
+                            state: {
+                              fromPage: "NEWTRANSACTION",
+                              txnRefNumber: transactionData.txnRefNo,
+                            },
+                          });
+                          // setState({ transactionData: transactionData });
+                          // transactionReceiptDetails(transactionData.txnRefNo);
+                        }}
+                        className="col-md-12 col-sm-12 col-lg-12 my-2"
+                      >
+                        <div className="d-flex flex-column single-box p-3 w-100">
+                          <div className="d-flex align-items-start justify-content-between">
+                            <label className="CR-font-14 CR-fw-500 mb-2">{transactionDate}</label>
+                            <label className="CR-font-18 CR-black-text mb-2">
+                              {transactionData.sendCurrencyCode} <b>{transactionData.amount}</b>{" "}
+                              <span className="">
+                                <img src={Chevronright} width="24px" height="24px" />
+                              </span>
+                            </label>
+                          </div>
+                          <div className="d-flex align-items-start justify-content-between">
+                            <label className="CR-font-14 CR-fw-500 mb-2">Folio Number</label>
+                            <label className="CR-font-18 CR-black-text mb-2">
+                              <b> {transactionData.viaFolioId}</b>
+                            </label>
+                          </div>
+                          <div className="d-flex align-items-end justify-content-between">
+                            <p className="CR-font-16 CR-black-text CR-fw-600 mb-0">
+                              {transactionData.receiverName}
+                            </p>
+                            <span className="CR-status-pending">{transactionData.txnStatus}</span>
+                          </div>
+                        </div>
+                      </li>
+                    </>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+          {props.state.receiverLists.length !== 0 && (
+            <div style={{ padding: "0 40px 0 40px" }} className="container mt-3">
+              <div className="d-flex justify-content-between">
+                <p className="text-left mb-0 CR-font-14 CR-fw-500 ">Recent beneficiary</p>
+                <span onClick={() => navigate("/my-beneficiary")} className="editcolor">
+                  SEE All
+                </span>
+              </div>
+              <ul className="row">
+                {props.state.receiverLists.slice(0, 2).map((receiver, key) => {
+                  return (
+                    <>
+                      <li
+                        style={{ cursor: "pointer" }}
+                        onClick={() => receiverInfo(receiver.nickName, receiver.recordToken)}
+                        className="col-md-12 col-sm-12 col-lg-12"
+                      >
+                        <div className="align-items-start d-flex justify-content-start w-100 CR-border-bottom-1 rounded-0 single-box shadow-none  ">
+                          {/* <div className="CR-bank-logo me-3">
+                            <img src={bank1png} width="100%" height="100%" />
+                          </div> */}
+                          <div className="d-flex justify-content-between flex-column w-100">
+                            <div className="d-flex align-items-start justify-content-between">
+                              <label className="CR-font-14 CR-black-text CR-fw-600 text-left ">
+                                {" "}
+                                {`${receiver.firstName} ${receiver.lastName}`}
+                              </label>
+                              <span className="">
+                                <img src={Chevronright} width="24px" height="24px" />
+                              </span>
+                            </div>
+                            <p className="CR-font-12 text-left CR-fw-500 ">
+                              {receiver.bankName}
+                              <span>&#8226;</span> {receiver.unMaskedAccountNo}
+                            </p>
+                          </div>
+                          <a className=""></a>
+                        </div>
+                      </li>
+                    </>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+
+          {/* <div className="bgcolor mt-4 p-3">
+                  <sapn>
+                    For list of partners in diffrent countries <a href="#">TAP HERE</a>
+                  </sapn>
+                </div>
+
+                <div className="sliderbg mt-4">
+                  <div className="container positionabs mt-5  ">
+                    <h5>How its Work</h5>
+                    <div className="site-card-wrapper  ">
+                      <Row gutter={16} className="">
+                        <Col span={8}>
+                          <Card title="Step 1" bordered={false}>
+                            Select the country you wish to remit from.
+                          </Card>
+                        </Col>
+                        <Col span={8}>
+                          <Card title="Step 2" bordered={false}>
+                            Enter your details
+                          </Card>
+                        </Col>
+                        <Col span={8}>
+                          <Card title="Step 3" bordered={false}>
+                            Initiate remittance process
+                          </Card>
+                        </Col>
+                      </Row>
+                    </div>
+                  </div>
+                </div> */}
+
+          <div className="bottom_panel">
+            <div className="d-flex align-items-baseline justify-content-between ">
+              <p className="btn-enable-row"> </p>
+              <button
+                htmlType="submit"
+                className="btn btn-primary CR-primary-btn"
+                style={{ width: "150px", margin: "0 !important", right: 0 }}
+                disabled={props.state.recvAmount === 0}
+              >
+                GET STARTED
+              </button>
+            </div>
+          </div>
+        </div>
+        <Modal
+          className="new-transaction-modal"
+          centered
+          open={state.tncModal}
+          onCancel={() => setState({ tncModal: false })}
+          footer={null}
+          width={"auto"}
+        >
+          <TermsandConditions setState={setState} />
+        </Modal>
+      </Form>
+    </div>
+  );
+};
+
+export default NewTransaction;
