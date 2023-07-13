@@ -1,0 +1,802 @@
+/* eslint-disable jsx-a11y/alt-text */
+import React, { useEffect, useReducer, useState } from "react";
+import "react-multi-carousel/lib/styles.css";
+import { Checkbox, Form, Input, notification, Select, Modal } from "antd";
+import { useDispatch, useSelector } from "react-redux";
+import useHttp from "../../../hooks/useHttp";
+import { GuestAPI } from "../../../apis/GuestAPI";
+import Spinner from "../../../reusable/Spinner";
+import { VIAmericaTransactionAPI } from "../../../apis/ViAmericaApi/TranscationAPI";
+import Bottom_Right from "../../../assets/images/click2remit/bottom_right.svg";
+import Top_Left from "../../../assets/images/click2remit/top_left.svg";
+import { flags } from "../../../services/utility/flags";
+import { COUNTRY } from "../../../services/Country";
+import { setSendCountryCode, setSendCurrencyCode } from "../../../reducers/userReducer";
+import { setRecvCountryCode, setRecvCurrencyCode } from "../../../reducers/userReducer";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import Main from "../Layouts/Main";
+import Carousel from "react-multi-carousel";
+import LocSlider from "../../../assets/images/click2remit/locationslider.png";
+import DocSlider from "../../../assets/images/click2remit/docslider.png";
+import TransSlider from "../../../assets/images/click2remit/transslider.png";
+import TermsandConditions from "./TermsandConditions";
+import CustomInput from "../../../reusable/CustomInput";
+import FloatInput from "../../../reusable/FloatInput";
+
+const responsive = {
+  desktop: {
+    breakpoint: { max: 3000, min: 1024 },
+    items: 3,
+    slidesToSlide: 3, // optional, default to 1.
+  },
+  tablet: {
+    breakpoint: { max: 1024, min: 464 },
+    items: 3,
+    slidesToSlide: 3, // optional, default to 1.
+  },
+  mobile: {
+    breakpoint: { max: 464, min: 0 },
+    items: 2,
+    slidesToSlide: 2, // optional, default to 1.
+  },
+};
+const { Option } = Select;
+const LandingPage = (props) => {
+  const [form] = Form.useForm();
+  const dispatch = useDispatch();
+  const AuthReducer = useSelector((state) => state.user);
+  const [loader, setLoader] = useState(0);
+  const [timeoutId, setTimeoutId] = React.useState("");
+  const hookCountryList = useHttp(GuestAPI.countryList);
+  const [amount, setAmount] = useState({
+    sendAmount: 0,
+    recvAmount: 0.0,
+    // sendAmountError: "",
+    // recvAmountError: "",
+  });
+  const [state, setState] = useReducer((state, newState) => ({ ...state, ...newState }), {
+    recipientRequestLists: [],
+    amountError: false,
+    // totalFee: 0,
+    //   exRate: 0,
+    countryList: [],
+
+    receiverCountryList: [],
+    sendAmount: 200,
+    recvCountryCode: AuthReducer.recvCountryCode,
+    recvCurrencyCode: AuthReducer.recvCurrencyCode,
+    sendCountryCode: AuthReducer.sendCountryCode,
+    sendCurrencyCode: AuthReducer.sendCurrencyCode,
+
+    sessionId: AuthReducer.sessionId,
+    userID: AuthReducer.userID,
+    isStep: 1,
+    innerTitle: "Send Money",
+    transactionLists: [],
+    favouriteTransactionLists: [],
+    promoCode: "",
+    tempSendAmount: 0,
+
+    repeatSendAmount: 0,
+    // recvAmount: 0,
+    totalFee: 0,
+    amountPayable: 0,
+    displayExRate: 0,
+    netRecvAmount: 0,
+    isDenefit: false,
+    applyPromoCode: false,
+    // isSelectedBankTransfer: false,
+    isSelectedBankTransfer: true,
+    receiverLists: [],
+    receiverName: "",
+    receiverAccount: "",
+    bankAccountLists: [],
+    sourceOFFundLists: [],
+    purposeLists: [],
+    subPurposeLists: [],
+    purposeID: "",
+    purposeName: "",
+    subPurposeID: "",
+    subPurposeName: "",
+    sendAccId: "",
+    achAccId: "",
+    accountNo: "",
+    senderName: "",
+    sourceFundId: "",
+    sourceOfFund: "",
+    exRateToken: "",
+    txnId: "",
+    txnRefno: "",
+    rpId: "",
+    rptRefNo: "",
+    globalpayData: [],
+    globalPayId: "",
+    order_id: "",
+    initiateDate: "",
+    expectedDeliveryDate: "",
+    txnReceiptDetails: {},
+    nickName: "NEWRECV",
+    categoryPromoLists: [],
+    promoValueWithDesc: "",
+    exRateWithPromo: 0,
+    promoValue: 0,
+    _isScheduleTransaction: false,
+    scheduleTransactionDate: "",
+    rgtn: "",
+    paymentOptions: [],
+
+    // for ViAmerica Service
+    viExRate: "0",
+    viFee: "0",
+    serviceProvider: "VIA",
+
+    serviceCharge: 0,
+    exRate: 0,
+    transferFee: "",
+    tax: "",
+    tncModal: false,
+    tncCheck: false,
+    tncVal: false,
+  });
+  const location = useLocation();
+  const navigate = useNavigate();
+  const hookGetPaymentOption = useHttp(GuestAPI.paymentOption);
+
+  const hookPostExchangeRate = useHttp(GuestAPI.postExchangeRate);
+
+  const hookVIAmericaBestRates = useHttp(VIAmericaTransactionAPI.viAmericaBestRates);
+  const hookRecvCountryList = useHttp(GuestAPI.receiverCountryList);
+
+  useEffect(() => {
+    getCountryList();
+  }, []);
+
+  useEffect(() => {
+    if (state.tncCheck) {
+      setState({ tncVal: false });
+    }
+  }, [state.tncCheck]);
+
+  // useEffect(() => {
+  //   if (state.serviceProvider === "VIA") {
+  //     viAmeracaRate();
+  //   }
+  // }, []);
+
+  // useEffect(() => {
+  //   if (state.viExRate !== "0") {
+  //     loadExhangeRateHandler("SENDMONEY", state.isDenefit, state.promoCode, state.sendAmount);
+  //   }
+  // }, [state.viExRate, state.sendAmount]);
+
+  // useEffect(() => {
+  //   loadExhangeRateHandler(1000, state.sendCurrencyCode);
+  // }, [state.programCode]);
+
+  useEffect(() => {
+    if (AuthReducer.recvCurrencyCode !== "") {
+      console.log("AuthReducer", AuthReducer);
+      getPaymentOption();
+      loadExhangeRateHandler(1000, AuthReducer.sendCurrencyCode);
+    }
+  }, [AuthReducer.recvCurrencyCode]);
+
+  useEffect(() => {
+    if (AuthReducer.sendCountryCode !== "") {
+      recvCountryList();
+    }
+  }, [AuthReducer.sendCountryCode]);
+
+  const loadExhangeRateHandler = (valueSendAmount, __currency) => {
+    let payload = {
+      requestType: "EXCHANGERATE",
+      pageName: "PRELOGIN",
+      amount: valueSendAmount,
+      recvNickName: "NEWRECV_SB",
+      recvModeCode: "DC",
+      sendModeCode: "ACH",
+      //   sendModeCode: state.sendModeCode,
+      programCode: "FER",
+      paymentMode1: "",
+      paymentMode2: "",
+      promoCode: "",
+      loyaltyPoints: "",
+      recvCountryCode: AuthReducer.recvCountryCode,
+      recvCurrencyCode: AuthReducer.recvCurrencyCode,
+      sendCountryCode: AuthReducer.sendCountryCode,
+      sendCurrencyCode: AuthReducer.sendCurrencyCode,
+      // enteredAmtCurrency: "GBP",
+      enteredAmtCurrency: __currency,
+      ...(state.viExRate !== "0" && { exRate: state.viExRate }),
+      ...(state.viFee !== "0" && { fee: state.viFee }),
+    };
+    setLoader((prevState) => prevState + 1);
+    hookPostExchangeRate.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status === "S") {
+        let expectedDeliveryDateStr = data.expectedDeliveryDate;
+        let expectedDeliveryDate = expectedDeliveryDateStr.substring(
+          0,
+          expectedDeliveryDateStr.lastIndexOf(" ") + 1,
+        );
+        setAmount({
+          ...amount,
+          sendAmount: __currency === "USD" ? data.enteredAmount : data.amountPayable,
+          recvAmount: __currency === "INR" ? data.enteredAmount : data.recvAmount,
+        });
+
+        // setAmount({
+        //   ...amount,
+        //   sendAmount: __currency === "USD" ? data.enteredAmount : data.amountPayable,
+        //   recvAmount: __currency === "INR" ? data.enteredAmount : data.recvAmount,
+        // });
+        setState({
+          amountPayable: data.sendAmount,
+          totalFee: data.totalFee,
+          serviceCharge: data.serviceCharge,
+          exRate: data.exRate,
+          expectedDeliveryDate: expectedDeliveryDate,
+        });
+      } else {
+        if (data.errorList) {
+          notification.error({ message: data.errorList[0].error });
+        } else {
+          notification.error({ message: data.errorMessage ? data.errorMessage:"Post Exchange rate failed."});
+        }
+        setAmount({
+          ...amount,
+          // recvAmount: 0,
+          sendAmount: __currency === "USD" ? valueSendAmount : 0,
+          recvAmount: __currency === "INR" ? valueSendAmount : 0,
+        });
+        setState({
+          totalFee: 0,
+          exRate: 0,
+        });
+      }
+    });
+  };
+
+  const getCountryList = () => {
+    const payload = { requestType: "COUNTRYLIST" };
+
+    hookCountryList.sendRequest(payload, function (data) {
+      if (data.status === "S") {
+        setState({
+          countryList: data.responseData,
+        });
+      }
+    });
+  };
+  const getPaymentOption = async () => {
+    let payload = {
+      requestType: "PAYMENTOPTION",
+      // amount: state.sendAmount,
+      amount: 1000,
+      sendCountryCode: AuthReducer.sendCountryCode,
+      sendCountryCurrency: AuthReducer.sendCurrencyCode,
+      recvCountryCode: AuthReducer.recvCountryCode,
+      recvCountryCurrency: AuthReducer.recvCurrencyCode,
+    };
+
+    setLoader((prevState) => prevState + 1);
+    hookGetPaymentOption.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status === "S") {
+        setState({
+          paymentOptions: data.responseData,
+        });
+      }
+    });
+  };
+
+  const recvCountryList = async () => {
+    const payload = {
+      requestType: "RECVCOUNTRYLIST",
+      sendCountry: AuthReducer.sendCountryCode,
+      sendCurrency: AuthReducer.sendCurrencyCode,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookRecvCountryList.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+
+      if (data.status === "S") {
+        setState({ recvCountryList: data.responseData });
+        // for only first country in recvCountryList
+        dispatch(setRecvCountryCode(data.responseData[0].recvCountry));
+        dispatch(setRecvCurrencyCode(COUNTRY[data.responseData[0].recvCountry].countryCurrency));
+      }
+    });
+  };
+  const viAmeracaRate = () => {
+    let payload = {
+      requestType: "BESTRATES",
+      clientId: "VIAMERICAS",
+    };
+    setLoader((prevState) => prevState + 1);
+    hookVIAmericaBestRates.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status === "S") {
+        setState({
+          viExRate: data.conversionRate,
+          viFee: data.fee,
+        });
+      }
+    });
+  };
+
+  const onChangeSendCountry = (val) => {
+    dispatch(setSendCountryCode(val));
+    dispatch(setSendCurrencyCode(COUNTRY[val].countryCurrency));
+  };
+
+  const sendAmountHandler = (e, __currency) => {
+    let sendAmtVal = "";
+    // setState({ sendAmount: e.target.value })
+
+    sendAmtVal =
+      e.target.value.indexOf(".") >= 0
+        ? e.target.value.substr(0, e.target.value.indexOf(".")) +
+          e.target.value.substr(e.target.value.indexOf("."), 3)
+        : e.target.value;
+    clearTimeout(timeoutId);
+    if (e.target.value) {
+      setAmount({
+        ...amount,
+        sendAmount: sendAmtVal,
+        // recvAmount: e.target.value,
+      });
+
+      const valueSendAmount = sendAmtVal;
+      let valueTimeOutId = setTimeout(
+        () => loadExhangeRateHandler(valueSendAmount, __currency),
+        800,
+      );
+      setTimeoutId(valueTimeOutId);
+    } else {
+      // notification.error({
+      //   message: "Only Numbers Allowed",
+      // });
+      setAmount({
+        ...amount,
+        sendAmount: "",
+        recvAmount: "",
+      });
+    }
+  };
+
+  const recvAmountHandler = (e) => {
+    let recvAmtVal = "";
+    recvAmtVal =
+      e.target.value.indexOf(".") >= 0
+        ? e.target.value.substr(0, e.target.value.indexOf(".")) +
+          e.target.value.substr(e.target.value.indexOf("."), 3)
+        : e.target.value;
+
+    clearTimeout(timeoutId);
+    if (e.target.value) {
+      setAmount({
+        ...amount,
+        // sendAmount: e.target.value,
+        recvAmount: recvAmtVal,
+      });
+      console.log("eee", recvAmtVal);
+      const valueSendAmount = recvAmtVal;
+      let valueTimeOutId = setTimeout(() => loadExhangeRateHandler(valueSendAmount, "INR"), 800);
+      setTimeoutId(valueTimeOutId);
+    } else {
+      setAmount({
+        ...amount,
+        recvAmount: "",
+        sendAmount: "",
+      });
+    }
+  };
+
+  const selectBeforeSending =
+    AuthReducer.sendCurrencyCode !== "" ? (
+      <span className="SendMoney-AddonBefore">
+        <span>
+          <p>{AuthReducer.sendCurrencyCode}</p>
+          <img
+            height="12px"
+            src={require(`../../../assets/images/flags/${flags[AuthReducer.sendCountryCode]}`)}
+          ></img>
+        </span>
+      </span>
+    ) : (
+      <span className="SendMoney-AddonBefore">
+        <span>
+          <p>&nbsp;&nbsp;&nbsp;</p>
+          <img height="18px" src={require(`../../../assets/images/flags/globe.png`)}></img>
+        </span>
+      </span>
+    );
+  const selectBeforeReceiving =
+    AuthReducer.recvCurrencyCode !== "" ? (
+      <span className="SendMoney-AddonBefore">
+        <span>
+          <p>{AuthReducer.recvCurrencyCode}</p>
+          <img
+            height="12px"
+            src={require(`../../../assets/images/flags/${flags[AuthReducer.recvCountryCode]}`)}
+          ></img>
+        </span>
+      </span>
+    ) : (
+      <span className="SendMoney-AddonBefore">
+        <span>
+          <p>INR</p>
+          <img height="12px" src={require(`../../../assets/images/flags/${flags["IN"]}`)}></img>
+        </span>
+      </span>
+    );
+
+  return (
+    <Main sidebar={false}>
+      <div className="row" style={{ padding: "0px 0px 0px 0px !important" }}>
+        <div className="col-12 col-md-6 d-none d-sm-block">
+          <div className="home-banner-section">
+            {/* <h1>A Platform by <br/>Kotak Mahindra Bank. </h1>  */}
+            {/* <h2>Hassle free transfer to 50+ countries</h2> */}
+            <ul
+              className="d-flex justify-content-center gap-5 px-md-4"
+              style={{ listStyleType: "disc", fontSize: "32px",fontWeight:"bold" }}
+            >
+              <li>Simple</li>
+              <li>Secure</li>
+              <li>Swift</li>
+            </ul>
+            <ul  className="d-flex justify-content-center px-md-1"
+              style={{ fontSize: "25px" }}>
+              <li>A platform for all your remittances to India</li>
+            </ul>
+          </div>
+          <img
+            className="w-100"
+            src={require(`../../../assets/images/click2remit/money-transfer-globe.png`)}
+          ></img>
+          {/* <ul
+            className="d-flex justify-content-center gap-5 px-md-3"
+            style={{ listStyleType: "disc", fontSize: "25px" }}
+          >
+            <li>Simple</li>
+            <li>Secure</li>
+            <li>Swift</li>
+          </ul> */}
+        </div>
+        <div className="col-12 col-md-6">
+          <Form
+            initialValues={{ serviceProvider: "VIA" }}
+            form={form}
+            onFinish={() => {
+              if (state.sendAmount >= 1) {
+                navigate("/create-account");
+              } else {
+                notification.error({
+                  message: "Please enter valid amount",
+                });
+              }
+            }}
+          >
+            <div className="CR-default-box-2  CR-default-box-sendMoney ladingpagecontainer">
+              <div className="SendMoney-Input-Container">
+                <div className="SendMoney-Input-Top-Container">
+                  <h2>Transfer Amount</h2>
+                  <div className="reset-btn-landingpg">
+                    <Form.Item
+                      name="choose_country"
+                      rules={[
+                        {
+                          required: true,
+                          message: "Please select country.",
+                        },
+                      ]}
+                    >
+                      <Select
+                        placeholder="Choose Country"
+                        onChange={onChangeSendCountry}
+                        // defaultValue={AuthReducer.sendCountryCode}
+                      >
+                        {state.countryList.map((item) => {
+                          return (
+                            <Option value={item.sendCountry}>
+                              From {item.sendCountry}&nbsp;&nbsp;&nbsp;
+                              <img
+                                height="50%"
+                                src={require(`../../../assets/images/flags/${
+                                  flags[item.sendCountry]
+                                }`)}
+                                alt={item.sendCurrency}
+                                // value={item.sendCurrency}
+                              />
+                            </Option>
+                          );
+                        })}
+                        {/* <Option>
+                  from us <img src={UK_Flag} />{" "}
+                </Option> */}
+                      </Select>
+                    </Form.Item>
+                    {AuthReducer.sendCountryCode !== "" && (
+                      <span
+                        className="text-center"
+                        style={{
+                          display: "inherit",
+                          fontSize: "12px",
+                          marginTop: "-20px",
+                        }}
+                        onClick={() => {
+                          window.location.reload();
+                        }}
+                      >
+                        RESET
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <Spinner spinning={loader === 0 ? false : true}>
+                  <div className="SendMoney-Input-Bottom-Container">
+                    <img className="img1" src={Top_Left}></img>
+                    <div className="SendMoney-Input-Bottom-Ticket-Container">
+                      <div>
+                        <Input
+                          addonBefore={selectBeforeSending}
+                          type="text"
+                          step="0.01"
+                          min={0}
+                          value={amount.sendAmount}
+                          onChange={(e) => {
+                            let re = /^\d*\.?\d*$/;
+                            if (re.test(e.target.value)) {
+                              if (AuthReducer.sendCountryCode === "") {
+                                form.setFields([
+                                  { name: "choose_country", errors: ["Please select country"] },
+                                ]);
+                              } else {
+                                // setAmount({
+                                //   ...amount,
+                                //   sendAmount: e.target.value,
+                                //   // recvAmount: e.target.value,
+                                // });
+                                sendAmountHandler(e, AuthReducer.sendCurrencyCode);
+
+                              }
+                            }
+                          }}
+                          // onBlur={(e) => {
+                          //   let re = /^\d*\.?\d*$/;
+                          //   if (re.test(e.target.value)) {
+                          //     if (AuthReducer.sendCountryCode === "") {
+                          //       form.setFields([
+                          //         { name: "choose_country", errors: ["Please select country"] },
+                          //       ]);
+                          //     } else {
+                          //       sendAmountHandler(e, AuthReducer.sendCurrencyCode);
+                          //     }
+                          //   }
+                          // }}
+                          // onBlur={(e) => {
+                          //   if (e.target.value !== "0") {
+                          //     props.onCallComputeExchangeRates(
+                          //       "SENDMONEY",
+                          //       state.isDenefit,
+                          //       state.promoCode,
+                          //       state.sendAmount,
+                          //     );
+                          //   }
+                          // }}
+                        />
+
+                        <div className="Country-Container">
+                          {AuthReducer.sendCountryCode !== "" && (
+                            <>
+                              <img
+                                height="50%"
+                                src={require(`../../../assets/images/flags/${
+                                  flags[AuthReducer.sendCountryCode]
+                                }`)}
+                              />
+                              <p>1 {AuthReducer.sendCurrencyCode}</p>
+                              <p>=</p>
+                            </>
+                          )}
+
+                          {AuthReducer.recvCountryCode !== "" && (
+                            <>
+                              <img
+                                height="50%"
+                                src={require(`../../../assets/images/flags/${
+                                  flags[AuthReducer.recvCountryCode]
+                                }`)}
+                              ></img>
+                              <p>{`${state.exRate} ${AuthReducer.recvCurrencyCode}`}</p>
+                            </>
+                          )}
+                        </div>
+                        <Input
+                          addonBefore={selectBeforeReceiving}
+                          type="text"
+                          step="0.01"
+                          min={0}
+                          readOnly={AuthReducer.groupId === "KCB" ? true : false}
+                          value={amount.recvAmount}
+                          // onChange={(e) => props.setState({ recvAmount: e.target.value })}
+                          onChange={(e) => {
+                            let re = /^\d*\.?\d*$/;
+                            if (re.test(e.target.value)) {
+                              recvAmountHandler(e);
+                            }
+                          }}
+                          // onBlur={() =>
+                          //   onCallComputeExchangeRates(
+                          //     "SENDMONEY",
+                          //     state.isDenefit,
+                          //     state.promoCode,
+                          //     state.recvAmount,
+                          //     "REVERSE",
+                          //   )
+                          // }
+                        />
+                      </div>
+                    </div>
+                    <img className="img2" src={Bottom_Right}></img>
+                  </div>
+                </Spinner>
+              </div>
+              <div className="container mt-3 formitemmargin">
+                {/* <CustomInput
+              name="serviceProvider"
+              placeholder="Select Service Provider"
+              label="Service Provider"
+              showLabel={false}
+              required
+            >
+              <FloatInput
+                type="select"
+                className="w-100"
+                onChange={(e) => setState({ serviceProvider: e })}
+                placeholder="Select Service Provider"
+                // label="select your recipient"
+                required
+              >
+                <Option value="VIA">VI America</Option>
+              </FloatInput>
+            </CustomInput> */}
+                {/* <CustomInput
+                name="serviceProvider"
+                placeholder="Select Service Provider"
+                label="Service Provider"
+                showLabel={false}
+                required
+              >
+                <FloatInput
+                  type="select"
+                  className="w-100"
+                  onChange={(e) => {
+                    setState({ serviceProvider: e });
+                    setState({ formObj: { ...state.formObj, serviceProvider: e } });
+                  }}
+                  placeholder="Select Service Provider"
+                  label="select your recipient"
+                  required
+                >
+                  <Option value="VIA">VIAMERICAS</Option>
+                </FloatInput>
+              </CustomInput> */}
+                <Form.Item
+                  className="form-item"
+                  name="readTermsConditions"
+                  valuePropName="checked"
+                  rules={[
+                    {
+                      validator: (_, value) =>
+                        value
+                          ? Promise.resolve()
+                          : Promise.reject(new Error("Please confirm terms and conditions.")),
+                    },
+                  ]}
+                >
+                  <Checkbox
+                    checked={state.tncCheck}
+                    onChange={(e) => setState({ tncCheck: !state.tncCheck })}
+                  >
+                    <div className="d-flex">
+                      <p>
+                        I accept all the &nbsp;
+                        <span
+                          className="m-0 text-primary"
+                          href="javascript:void(0)"
+                          onClick={() => setState({ tncModal: true })}
+                        >
+                          TERMS & CONDITIONS
+                        </span>
+                      </p>
+                    </div>
+                  </Checkbox>
+                </Form.Item>
+              </div>
+              {state.tncVal && !state.tncCheck && (
+                <p style={{ color: "red", fontSize: "0.75rem" }}>
+                  Please accept the Terms & Conditions
+                </p>
+              )}
+              <div className="bgcolor mt-4 p-3">
+                <sapn>
+                  For list of partners in diffrent countries <Link to="#">TAP HERE</Link>
+                </sapn>
+              </div>
+
+              <div className="SendMoney-slider-Container">
+                <div className="SendMoney-slider-inside-Container">
+                  <p
+                    className="text-heading"
+                    style={{ margin: "0px 0 10px 30px", fontSize: "1rem" }}
+                  >
+                    How it works
+                  </p>
+                  <Carousel responsive={responsive}>
+                    <div className="slider-pane">
+                      <div className="slider-pane-center-container">
+                        <img height="44px" src={LocSlider} />
+                        <p className="text-heading m-0 mt-2" style={{ fontSize: "1rem" }}>
+                          Step 1
+                        </p>
+                        <p className="m-0 mt-2 sub-text">
+                          Select the country you wish to remit from.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="slider-pane">
+                      <img height="44px" src={DocSlider} />
+                      <p className="text-heading m-0 mt-2" style={{ fontSize: "1rem" }}>
+                        Step 2
+                      </p>
+                      <p className="m-0 mt-2 sub-text">Enter your details.</p>
+                    </div>
+                    <div className="slider-pane">
+                      <img height="44px" src={TransSlider} />
+                      <p className="text-heading m-0 mt-2" style={{ fontSize: "1rem" }}>
+                        Step 3
+                      </p>
+                      <p className="m-0 mt-2 sub-text">Initiate remittance process.</p>
+                    </div>
+                    <div></div>
+                  </Carousel>
+                </div>
+              </div>
+
+              <div className="bottom_panel mt-0">
+                <div className="d-flex align-items-baseline justify-content-between ">
+                  <p className="btn-enable-row"> </p>
+                  <button
+                    htmlType="submit"
+                    className="btn btn-primary CR-primary-btn"
+                    style={{ width: "150px", margin: "0 !important", right: 0 }}
+                    disabled={state.recvAmount == 0}
+                    // onClick={() => navigate("/create-account")}
+                  >
+                    GET STARTED
+                  </button>
+                </div>
+              </div>
+            </div>
+            <Modal
+              className="new-transaction-modal"
+              centered
+              open={state.tncModal}
+              onCancel={() => setState({ tncModal: false })}
+              footer={null}
+              width={"auto"}
+            >
+              <TermsandConditions setState={setState} />
+            </Modal>
+          </Form>
+        </div>
+      </div>
+    </Main>
+  );
+};
+
+export default LandingPage;
