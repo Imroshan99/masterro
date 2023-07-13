@@ -1,0 +1,1506 @@
+import React, { useState, useReducer, useEffect, Fragment } from "react";
+import { Row, Col, Modal, Divider, Spin, notification, Form } from "antd";
+import Swal from "sweetalert2";
+import { Link, useLocation, useNavigate } from "react-router-dom";
+import { config } from "../../../../config";
+import { useDispatch, useSelector } from "react-redux";
+// import DefaultLayout from "../../layout/DefaultLayout";
+import { encrypt, decrypt, publickey } from "../../../../helpers/makeHash";
+import TransactionConfirm from "./TransactionConfirm";
+import NewTransaction from "./NewTransaction";
+import { TransactionAPI } from "../../../../apis/TransactionAPI";
+// import Checkout from "./Checkout";
+// import ThankYou from "./ThankYou";
+// import BankThankYou from "./BankThankYou";
+// import KCBBankThankYou from "./BankThankYou/KCB";
+// import XRBankThankYou from "./BankThankYou/XR";
+// import MFBankThankYou from "./BankThankYou/MF";
+// import ThankYouScheduleTransaction from "./ThankYouScheduleTransaction";
+import { GuestAPI } from "../../../../apis/GuestAPI";
+import { ProfileAPI } from "../../../../apis/ProfileAPI";
+import useHttp from "../../../../hooks/useHttp";
+import { VIAmericaTransactionAPI } from "../../../../apis/ViAmericaApi/TranscationAPI";
+import Main from "../../Layouts/Main";
+import Spinner from "../../../../reusable/Spinner";
+import ClickRemitBankThankYou from "./ClickRemitBankThankYou";
+import { COUNTRY } from "../../../../services/Country";
+import {
+  setKycDoneFrmTxnValidate,
+  setRecvCountryCode,
+  setRecvCurrencyCode,
+} from "../../../../reducers/userReducer";
+import MigratedData from "../../Pages/MigratedData";
+import moment from "moment";
+
+let timeOutId = null;
+export default function TranctionAction(props) {
+  const [form] = Form.useForm();
+  const dispatch = useDispatch();
+  const AuthReducer = useSelector((state) => state.user);
+  const ConfigReducer = useSelector((state) => state.user);
+  const defaultSettings = ConfigReducer.groupIdSettings.default;
+  const [loader, setLoader] = useState(0);
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const [state, setState] = useReducer((state, newState) => ({ ...state, ...newState }), {
+    clientId: "C2R",
+    groupId: "C2R",
+    sessionId: AuthReducer.sessionId,
+    userID: AuthReducer.userID,
+    isStep: 1,
+    innerTitle: "Send Money",
+    transactionLists: [],
+    favouriteTransactionLists: [],
+    promoCode: "",
+    tempSendAmount: 0,
+    sendAmount: 0,
+    repeatSendAmount: 0,
+    recvAmount: 0,
+    totalFee: 0,
+    amountPayable: 0,
+    displayExRate: 0,
+    netRecvAmount: 0,
+    finalRecvAmount: 0,
+    isDenefit: false,
+    applyPromoCode: false,
+    // isSelectedBankTransfer: false,
+    isSelectedBankTransfer: true,
+    receiverLists: [],
+    receiverName: "",
+    receiverAccount: "",
+    receiverBankName: "",
+    recvUnmaskedAccNo: "",
+    bankAccountLists: [],
+    sourceOFFundLists: [],
+    purposeLists: [],
+    subPurposeLists: [],
+    purposeID: "",
+    purposeName: "",
+    subPurposeID: "",
+    subPurposeName: "",
+    sendAccId: "",
+    achAccId: "",
+    accountNo: "",
+    senderName: "",
+    viaIdPayment: "",
+    sourceFundId: "",
+    sourceOfFund: "",
+    exRateToken: "",
+    txnId: "",
+    txnRefno: "",
+    rpId: "",
+    rptRefNo: "",
+    globalpayData: [],
+    globalPayId: "",
+    order_id: "",
+    initiateDate: "",
+    expectedDeliveryDate: "",
+    expectedDelivery: "",
+    calculateCostId: "",
+    txnReceiptDetails: {},
+    nickName: "NEWRECV",
+    categoryPromoLists: [],
+    promoValueWithDesc: "",
+    exRateWithPromo: 0,
+    promoValue: 0,
+    _isScheduleTransaction: false,
+    scheduleTransactionDate: "",
+    rgtn: "",
+    paymentOptions: [],
+    userLoginId: "",
+    viewTarnsaction: true,
+    isMigratedModal: false,
+    migratedProfileData: {},
+    // for ViAmerica Service
+    viExRate: "0",
+    viFee: "0",
+    serviceProvider: "VIA",
+
+    serviceCharge: 0,
+    exRate: 0,
+    transferFee: "",
+    tax: "",
+    vendorAccountId: "",
+    vendorAccessToken: "",
+    recvNameInitials: "",
+  });
+
+  const hookGetPaymentOption = useHttp(GuestAPI.paymentOption);
+
+  const hookGetRepeatTranscationDeatils = useHttp(TransactionAPI.repeatTranscationDeatils);
+  const hookGetTransactionLists = useHttp(TransactionAPI.transactionLists);
+  const hookGetDefaultTransactionList = useHttp(TransactionAPI.defaultTransactionList);
+  const hookGetCategoryPromoLists = useHttp(TransactionAPI.categoryPromoLists);
+  const hookGetComputeExchangeRates = useHttp(TransactionAPI.computeExchangeRates);
+  const hookGetReceiverLists = useHttp(TransactionAPI.receiverLists);
+  const hookGetBankAccountLists = useHttp(TransactionAPI.getBankAccountLists);
+  const hookGetAchAccountLists = useHttp(TransactionAPI.getAchAccountLists);
+  const hookGetPurposeLists = useHttp(TransactionAPI.purposeLists);
+  const hookGetSourceOFFundLists = useHttp(TransactionAPI.sourceOFFundLists);
+  const hookApplyPromoLists = useHttp(TransactionAPI.promoLists);
+  const hookBookTransaction = useHttp(TransactionAPI.bookTransaction);
+  const hookBookScheduleTransaction = useHttp(TransactionAPI.bookScheduleTransaction);
+  const hookGetGlobalpayData = useHttp(TransactionAPI.getGlobalpayData);
+  const hookGlobalpayResponse = useHttp(TransactionAPI.globalpayResponse);
+  const hookTransactionReceiptDetails = useHttp(TransactionAPI.transactionReceiptDetails);
+  const hookScheduleTransactionReceiptDetails = useHttp(
+    TransactionAPI.scheduleTransactionReceiptDetails,
+  );
+  const hookUserRiskProfile = useHttp(ProfileAPI.userRiskProfile);
+  const hookGetSenderKycDetails = useHttp(ProfileAPI.getSenderKycDetails);
+  const hookVIAmericaRate = useHttp(VIAmericaTransactionAPI.rate);
+  const hookVIPriceQuote = useHttp(VIAmericaTransactionAPI.ViaPriceQuote);
+  const hookViaCalculateCost = useHttp(VIAmericaTransactionAPI.ViaCalculateCost);
+  const hookRecvCountryList = useHttp(GuestAPI.receiverCountryList);
+  const hookGetProfile = useHttp(ProfileAPI.getProfile);
+  const hookViAmericaTransactionValidate = useHttp(
+    VIAmericaTransactionAPI.viAmericaTransactionValidate,
+  );
+  const hookViAmericaSenderBalanceCheck = useHttp(
+    VIAmericaTransactionAPI.viAmericaSenderBalanceCheck,
+  );
+
+  const hookViaUpdateSender = useHttp(ProfileAPI.viaUpdateSender);
+
+  // useEffect(() => {
+  //   if (AuthReducer.regCountryCode == "US") {
+  //     viAmericaRate();
+  //   }
+  // }, [])
+
+  // useEffect(() => {
+  //   if (state.sendAmount !== 0 && state.viExRate) {
+  //     onCallComputeExchangeRates(
+  //       "SENDMONEY",
+  //       state.isDenefit,
+  //       state.promoCode,
+  //       state.sendAmount
+  //     );
+  //   } else if (AuthReducer.regCountryCode !== "US" && state.sendAmount !== 0) {
+  //     onCallComputeExchangeRates(
+  //       "SENDMONEY",
+  //       state.isDenefit,
+  //       state.promoCode,
+  //       state.sendAmount
+  //     );
+  //   }
+  // }, [state.viExRate, state.sendAmount]);
+
+  useEffect(() => {
+    if (state.isStep === 4) {
+      setState({
+        innerTitle: "Review",
+      });
+    } else if (state.isStep === 6) {
+      setState({
+        innerTitle: "Confirmation",
+      });
+    } else {
+      setState({
+        innerTitle: "Send Money",
+      });
+    }
+  }, [state.isStep]);
+
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(async () => {
+    // let accessToken = await props.manageRefreshToken();
+    if (props.transcationType === "REPEAT") {
+      const { txnRefNo, rgtn } = props.repeatTranscationDetails;
+      setState({ isStep: 3, rgtn: rgtn });
+      await getRepeatTranscationDetails(txnRefNo, rgtn);
+
+      getPurposeLists();
+      getSourceOFFundLists();
+    } else {
+      // console.log("a", )
+      if (location.state && location.state.activeStep === 2) {
+        setState({
+          isStep: 2,
+          sendAmount: location.state.sendAmount,
+        });
+
+        onCallComputeExchangeRates(
+          "SENDMONEY",
+          state.isDenefit,
+          state.promoCode,
+          location.state.sendAmount,
+        );
+
+        defaultSettings.sendModeCode === "ACH" ? getAchAccountLists() : getBankAccountLists();
+
+        // getReceiverLists();
+        getSourceOFFundLists();
+      } else {
+        // defaultSettings.sendModeCode === "ACH"
+        // ? getAchAccountLists()
+        // : getBankAccountLists();
+        getAchAccountLists();
+        // getBankAccountLists()
+        getReceiverLists();
+        getSourceOFFundLists();
+
+        getCategoryPromoLists();
+        getTransactionList(null);
+        // getTransactionList("1");
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (state.serviceProvider === "VIA") {
+      // viAmeracaRate();
+      ViaPriceQuote();
+    }
+  }, []);
+  useEffect(() => {
+    getPurposeLists();
+  }, []);
+
+  useEffect(() => {
+    recvCountryList();
+  }, [AuthReducer.sendCountryCode]);
+
+  useEffect(() => {
+    //  alert(state.sendAmount)
+    if (state.repeatSendAmount !== 0) {
+      onCallComputeExchangeRates("TXNREVIEW", state.isDenefit, state.promoCode, state.sendAmount);
+    }
+  }, [state.repeatSendAmount]);
+
+  // useEffect(() => {
+  //   if (state.viExRate !== "0") {
+  //     onCallComputeExchangeRates(
+  //       "SENDMONEY",
+  //       state.isDenefit,
+  //       state.promoCode,
+  //       location?.state?.autoFillData?.sendAmount > 0
+  //         ? location?.state?.autoFillData?.sendAmount
+  //         : state.sendAmount,
+  //     );
+  //   }
+  // }, [state.viExRate]);
+  useEffect(() => {
+    if (state.sendAmount == 0 && !location?.state?.autoFillData?.sendAmount) {
+      getDefaultTransactionList();
+    }
+  }, []);
+
+  useEffect(() => {
+    getProfile();
+    onLoadSenderKycDetails();
+  }, []);
+
+  const onLoadSenderKycDetails = () => {
+    const payload = {
+      requestType: "SENDERKYCDTLS",
+      userId: AuthReducer.userID,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookGetSenderKycDetails.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status == "S") {
+        if (data.isViaKycDone === "N") {
+          viaUpdateSender();
+        } else {
+          // sendOTPforTransaction();
+        }
+      } else {
+        notification.error({
+          message: data.errorMessage ? data.errorMessage : "Get sender kyc details failed.",
+        });
+      }
+    });
+  };
+  const viaUpdateSender = () => {
+    let payload = {
+      clientId: "VIAMERICAS",
+      requestType: "VIAUPDATESENDER",
+      sendCountry: AuthReducer.sendCountryCode,
+      userId: AuthReducer.userID,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookViaUpdateSender.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status == "S") {
+      } else {
+        // setRedirectKYC(true);
+        // props.setState({ viewTarnsaction: false });
+      }
+    });
+  };
+  const getProfile = () => {
+    let payload = {
+      requestType: "LEAD",
+      userId: AuthReducer.userID,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookGetProfile.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status === "S") {
+        if (data.isMigretedCustomer == "Y" || data.isMigretedCustomer == "V") {
+          setState({
+            migratedProfileData: { ...data },
+            isMigratedModal: true,
+          });
+        }
+        setState({
+          userEmailId: data.emailId,
+          userLoginId: data.loginId,
+          userMobileNo: `${data.mobilePhoneCode}-${data.mobileNo}`,
+        });
+      } else {
+        notification.error({
+          message: data.errorMessage ? data.errorMessage : "Get profile failed.",
+        });
+      }
+    });
+  };
+
+  const viAmericaTransactionValidate = (val) => {
+    let payload = {
+      requestType: "VIATXNVALIDATE",
+      nickName: state.nickName,
+      loginId: state.userLoginId,
+      userId: AuthReducer.userID,
+      amount: state.sendAmount,
+      payer: "T325",
+    };
+    setLoader((prevState) => prevState + 1);
+    hookViAmericaTransactionValidate.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status === "S") {
+        if (data.needID == "true") {
+          navigate("/kyc", {
+            state: {
+              autoFillData: val,
+              autoFill: true,
+              needID: true,
+            },
+          });
+        } else if (data.needKYC == "true") {
+          navigate("/kyc", {
+            state: {
+              autoFillData: val,
+              autoFill: true,
+              needKYC: true,
+            },
+          });
+        } else {
+          ViaCalculateCost();
+        }
+      } else {
+        notification.error({
+          message: data.errorMessage ? data.errorMessage : "Via transaction validate failed.",
+        });
+      }
+    });
+  };
+
+  const getPaymentOption = async () => {
+    let payload = {
+      requestType: "PAYMENTOPTION",
+      // amount: state.sendAmount,
+      amount: 1000,
+      sendCountryCode: AuthReducer.sendCountryCode,
+      sendCountryCurrency: AuthReducer.sendCurrencyCode,
+      recvCountryCode: AuthReducer.recvCountryCode,
+      recvCountryCurrency: AuthReducer.recvCurrencyCode,
+    };
+
+    //   let data ={
+    //     "requestId":"3453",
+    //     "requestType":"PAYMENTOPTION",
+    //     "channelId":"WEB",
+    //     "clientId":"IUK",
+    //     "groupId":"IUK",
+    //     "sessionId":"5RC0BY7ckyCV9JL0_xgg_HCkwMmUQUSsvzjYPzRk",
+    //     "ipAddress":"127.0.0.1",
+    //     "amount": "1000",
+    //     "sendCountryCode" : "GB",
+    //     "sendCountryCurrency" : "GBP",
+    //     "recvCountryCode" : "IN",
+    //     "recvCountryCurrency" : "INR"
+    // }
+    setLoader((prevState) => prevState + 1);
+    hookGetPaymentOption.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status === "S") {
+        setState({
+          paymentOptions: data.responseData,
+        });
+      }
+    });
+  };
+
+  const getRepeatTranscationDetails = (txnRefNo, rgtn) => {
+    let transactiondata = {
+      requestType: "TXNDETAILS",
+      rgtn: rgtn, //FROM repeat button
+      txnRefNo: txnRefNo, //FROM repeat button
+      userId: state.userID,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookGetRepeatTranscationDeatils.sendRequest(transactiondata, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status == "S") {
+        setState({
+          sendAmount: data.sendAmount,
+          senderName: AuthReducer.userFullName,
+          accountNo: data.senderAccountNo,
+          receiverName: data.receiverName,
+          receiverAccount: data.recvAccNumber,
+          repeatSendAmount: data.sendAmount,
+          nickName: data.receiverNickName,
+          achAccId: data.achAccId,
+          isSelectedBankTransfer: true,
+        });
+      }
+    });
+  };
+
+  const getTransactionList = (isFav) => {
+    let transactiondata = {
+      requestType: "TRANSACTIONLIST",
+      bookingDateFrom: "",
+      favouriteFlag: isFav,
+      bookingDateTo: "",
+      recordsPerRequest: 5,
+      // recvNickName: state.nickName,
+      startIndex: 0,
+      status: "",
+      txnRefNo: "",
+      userId: state.userID,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookGetTransactionLists.sendRequest(transactiondata, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status == "S") {
+        if (isFav == "1") {
+          setState({ favouriteTransactionLists: data.responseData });
+        } else {
+          setState({ transactionLists: data.responseData });
+        }
+      }
+    });
+  };
+  const recvCountryList = async () => {
+    const payload = {
+      requestType: "RECVCOUNTRYLIST",
+      sendCountry: AuthReducer.sendCountryCode,
+      sendCurrency: AuthReducer.sendCurrencyCode,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookRecvCountryList.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+
+      if (data.status === "S") {
+        setState({ recvCountryList: data.responseData });
+        // for only first country in recvCountryList
+        dispatch(setRecvCountryCode(data.responseData[0].recvCountry));
+        dispatch(setRecvCurrencyCode(COUNTRY[data.responseData[0].recvCountry].countryCurrency));
+      }
+    });
+  };
+
+  const getDefaultTransactionList = async () => {
+    let defaultTransactiondata = {
+      requestType: "DEFAULTTXNDTLS",
+      recvNickName: "NEWRECV",
+      sendCountryCode: "",
+      sendModeCode: "",
+      programCode: "",
+      userId: AuthReducer.userID,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookGetDefaultTransactionList.sendRequest(defaultTransactiondata, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status === "S") {
+        let sendAmount = data.txnAmount.split(".");
+        setState({ sendAmount: sendAmount[0] });
+        // onCallComputeExchangeRates(
+        //   "SENDMONEY",
+        //   state.isDenefit,
+        //   state.promoCode,
+        //   data.txnAmount
+        // );
+      } else {
+        setState({ sendAmount: 100 });
+      }
+    });
+  };
+
+  const getCategoryPromoLists = async () => {
+    let defaultTransactiondata = {
+      requestType: "CATEGORYPROMOLISTS",
+      recvCountryCode: AuthReducer.recvCountryCode,
+      recvCurrencyCode: AuthReducer.recvCurrencyCode,
+      promoAmount: "1000",
+      recvModeCode: "DC",
+      sendModeCode: "CIP",
+      programCode: "FERINST",
+      // sendCountryCode: state.groupId == 'ICA' ? "CA" : "GB",
+      // sendCurrencyCode: state.groupId == 'ICA' ? "CAD" : "GBP",
+      sendCountryCode: AuthReducer.sendCountryCode,
+      sendCurrencyCode: AuthReducer.sendCurrencyCode,
+      userId: state.userID,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookGetCategoryPromoLists.sendRequest(defaultTransactiondata, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status == "S") {
+        setState({ categoryPromoLists: data.responseData });
+      }
+    });
+  };
+
+  // const viAmeracaRate = () => {
+  //   let payload = {
+  //     requestType: "RATE",
+  //     userId: state.userID,
+  //   };
+  //   setLoader((prevState) => prevState + 1);
+  //   hookVIAmericaRate.sendRequest(payload, function (data) {
+  //     setLoader((prevState) => prevState - 1);
+  //     if (data.status === "S") {
+  //       setState({
+  //         viExRate: data.conversionRate,
+  //         viFee: data.fee,
+  //       });
+  //     }
+  //   });
+  // };
+  const ViaPriceQuote = (country = "IND", mainSendAmt, _sendAmt) => {
+    let _sendAmount = mainSendAmt ? _sendAmt : state.sendAmount;
+    let payload = {
+      requestType: "PRICEQUOTE",
+      idDelivery: "C",
+      amountToSend:
+        country == "IND"
+          ? mainSendAmt
+            ? _sendAmount
+            : location?.state?.autoFillData?.sendAmount > 0
+            ? location?.state?.autoFillData?.sendAmount
+            : _sendAmount
+            ? _sendAmount
+            : 200
+          : state.recvAmount,
+      userId: state.userID,
+      idCountry: country,
+      idpayout: "T325",
+      couponCode: "",
+    };
+
+    setLoader((prevState) => prevState + 1);
+    hookVIPriceQuote.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status === "S") {
+        if (country == "IND") {
+          setState({
+            recvAmount: Number(data.totalToBePay.replace(/,/g, "")),
+            sendAmount: Number(data.amount.replace(/,/g, "")),
+            totalFee: data.fees,
+            amountPayable: data.totalToPay,
+            displayExRate: data.exchangeRate,
+          });
+        } else {
+          setState({ sendAmount: Number(data.amount.replace(/,/g, "")) });
+        }
+        setState({
+          viExRate: data.exchangeRate,
+          viFee: data.fees,
+        });
+      } else {
+        notification.error({
+          message: data.errorMessage ? data.errorMessage : "Via price quote failed",
+        });
+        if (country == "IND") {
+          setState({
+            recvAmount: "",
+          });
+        } else {
+          setState({
+            sendAmount: "",
+          });
+        }
+      }
+    });
+  };
+  const ViaCalculateCost = () => {
+    let payload = {
+      requestType: "CALCULATECOST",
+      userId: state.userID,
+      idCountry: "IND",
+      idDelivery: "C",
+      idpayout: "T325",
+      amountToSend: state.sendAmount,
+      currencyMode: "N",
+      idPayment: state.viaIdPayment,
+      customerType: "",
+      stateOrigin: "",
+      couponCode: "",
+    };
+
+    setLoader((prevState) => prevState + 1);
+    hookViaCalculateCost.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status === "S") {
+        setState({
+          expectedDelivery: data.availabilityDate,
+          calculateCostId: data.calculateCostId,
+          finalRecvAmount: data.totalToBePay,
+        });
+        if (data.limitedAmount == "") {
+          setState({
+            isStep: 4,
+            pageName: "TXNREVIEW",
+          });
+          setTimeout(() => {
+            onCallComputeExchangeRates(
+              "TXNREVIEW",
+              state.isDenefit,
+              state.promoCode,
+              state.sendAmount,
+            );
+          }, 500);
+        } else if (Number(data.limitedAmount.startsWith("0.00"))) {
+          notification.error({ message: `No more limit available.` });
+        } else {
+          if (Number(state.sendAmount) > Number(data.limitedAmount)) {
+            notification.error({
+              message: `You are allowed to send USD ${data.limitedAmount} account balance and limits.`,
+            });
+          } else {
+            setState({
+              isStep: 4,
+              pageName: "TXNREVIEW",
+            });
+            setTimeout(() => {
+              onCallComputeExchangeRates(
+                "TXNREVIEW",
+                state.isDenefit,
+                state.promoCode,
+                state.sendAmount,
+              );
+            }, 500);
+          }
+        }
+      } else {
+        notification.error({
+          message: data.errorMessage
+            ? data.errorMessage
+            : data.message
+            ? data.message
+            : "Via calculate cost failed.",
+        });
+      }
+    });
+  };
+  const onCallComputeExchangeRates = (
+    pageName,
+    isDenefit,
+    promoCode,
+    sendAmount,
+    txnType = "FORWARD",
+  ) => {
+    // alert(sendAmount)
+    clearTimeout(timeOutId);
+    timeOutId = setTimeout(() => {
+      handlerComputeExchangeRates(pageName, isDenefit, promoCode, sendAmount, txnType);
+    }, 0);
+  };
+
+  const handlerComputeExchangeRates = (
+    pageName,
+    isDenefit,
+    promoCode,
+    sendAmount,
+    txnType = "FORWARD",
+  ) => {
+    var getPromoCode = promoCode;
+
+    let computeData = {
+      requestType: "EXCHANGERATE",
+      amount: sendAmount,
+      enteredAmtCurrency:
+        txnType === "FORWARD" ? AuthReducer.sendCurrencyCode : AuthReducer.recvCurrencyCode,
+      loyaltyPoints: "",
+      pageName: pageName,
+      paymentMode1: "",
+      paymentMode2: "",
+      // programCode: "FERINST",
+      // programCode: "FER",
+      programCode: defaultSettings.programCode,
+      promoCode: getPromoCode, //NEWRECV
+      recvCountryCode: AuthReducer.recvCountryCode,
+      recvCurrencyCode: AuthReducer.recvCurrencyCode,
+      recvModeCode: "DC",
+      recvNickName: state.nickName,
+      sendCountryCode: AuthReducer.sendCountryCode,
+      sendCurrencyCode: AuthReducer.sendCurrencyCode,
+      // sendModeCode: "CIP",
+      sendModeCode: "ACH",
+      userId: state.userID,
+      // fee: state.viFee,
+      // exRate: state.viExRate,
+      ...(state.viExRate !== "0" && { exRate: state.viExRate }),
+      ...(state.viFee !== "0" && { fee: state.viFee }),
+    };
+    setLoader((prevState) => prevState + 1);
+    hookGetComputeExchangeRates.sendRequest(computeData, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status === "S") {
+        setState({
+          // sendAmount: data.txnAmount
+          tempSendAmount: data.sendAmount,
+          recvAmount: data.recvAmount,
+          // amountPayable: data.amountPayable,
+          // totalFee: data.totalFee,
+          // displayExRate: data.displayExRate,
+          netRecvAmount: data.netRecvAmount,
+          exRateToken: data.exRateToken,
+          exRateWithPromo: data.exRateWithPromo,
+          promoValue: data.promoValue,
+          benefit: data.benefit,
+          initiateDate: data.initiateDate,
+          expectedDeliveryDate: data.expectedDeliveryDate,
+          promoValueWithDesc: data.promoValueWithDesc,
+        });
+      } else {
+        setState({
+          recvAmount: 0,
+        });
+        if (data.errorList) {
+          notification.error({ message: data.errorList[0].error });
+        } else {
+          notification.error({
+            message: data.errorMessage ? data.errorMessage : "Compute exchange rate failed.",
+          });
+        }
+      }
+      // setState({
+      //   // sendAmount: data.txnAmount
+      //   tempSendAmount: data.sendAmount,
+      //   recvAmount: data.recvAmount,
+      //   amountPayable: data.amountPayable,
+      //   totalFee: data.totalFee,
+      //   displayExRate: data.displayExRate,
+      //   netRecvAmount: data.netRecvAmount,
+      //   exRateToken: data.exRateToken,
+      //   exRateWithPromo: data.exRateWithPromo,
+      //   promoValue: data.promoValue,
+      //   benefit: data.benefit,
+      //   initiateDate: data.initiateDate,
+      //   expectedDeliveryDate: data.expectedDeliveryDate,
+      //   promoValueWithDesc: data.promoValueWithDesc,
+      // });
+      if (txnType === "REVERSE") {
+        setState({
+          sendAmount: data.sendAmount,
+        });
+      }
+    });
+  };
+
+  const getReceiverLists = () => {
+    const payload = {
+      requestType: "GETRECVLIST",
+      userId: state.userID,
+      favouriteFlag: "",
+      startIndex: "0",
+      recordsPerRequest: "",
+      search: "",
+      statusFlag: "VALID",
+    };
+    setLoader((prevState) => prevState + 1);
+    hookGetReceiverLists.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status == "S") {
+        setState({ receiverLists: data.responseData });
+      }
+    });
+  };
+
+  const getBankAccountLists = () => {
+    const payload = {
+      requestType: "VIAMERICAS",
+      countryCode: AuthReducer.sendCountryCode,
+      countryId: undefined,
+      favouriteFlag: "1",
+      recordsPerRequest: "15",
+      startIndex: "0",
+      userId: state.userID,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookGetBankAccountLists.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status == "S") {
+        setState({ bankAccountLists: data.responseData });
+      }
+    });
+  };
+
+  const getAchAccountLists = () => {
+    const payload = {
+      clientId: "C2R",
+      requestType: "VIAMERICAS",
+      clientId: "VIAMERICAS",
+      countryCode: AuthReducer.sendCountryCode,
+      favouriteFlag: "1",
+      startIndex: "0",
+      recordsPerRequest: "50",
+      userId: state.userID,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookGetAchAccountLists.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status == "S") {
+        setState({ bankAccountLists: data.responseData });
+      }
+    });
+  };
+
+  const getPurposeLists = () => {
+    const payload = {
+      requestType: "PurposeList",
+      keyword: "",
+      nickName: state.nickName,
+      recvCountryCode: AuthReducer.recvCountryCode,
+      userId: state.userID,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookGetPurposeLists.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status == "S") {
+        setState({ purposeLists: data.responseData });
+      }
+    });
+  };
+
+  const getSourceOFFundLists = () => {
+    const payload = {
+      requestType: "FUNDSOURCELIST",
+    };
+    setLoader((prevState) => prevState + 1);
+    hookGetSourceOFFundLists.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status == "S") {
+        setState({ sourceOFFundLists: data.responseData });
+      }
+    });
+  };
+
+  const applyPromo = () => {
+    const payload = {
+      requestType: "PROMOLISTS",
+      programCode: "FERINST",
+      promoAmount: "800",
+      promoCode: state.promoCode,
+      recvCountryCode: "IN",
+      recvCurrencyCode: "INR",
+      recvModeCode: "DC",
+      sendCountryCode: AuthReducer.sendCountryCode,
+      sendCurrencyCode: AuthReducer.sendCurrencyCode,
+      sendModeCode: "CIP",
+      userId: state.userID,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookApplyPromoLists.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status == "S") {
+        // setState({ subPurposeLists: data.responseData })
+        onCallComputeExchangeRates("SENDMONEY", state.isDenefit, state.promoCode, state.sendAmount);
+      } else {
+        notification.error({
+          message: data.errorMessage ? data.errorMessage : "Aplly promo list failed.",
+        });
+      }
+    });
+  };
+
+  const bookTransaction = () => {
+    let expDeliveryDateNew = moment(state.expectedDelivery, "DD-MM-YYYY").format("YYYY-MM-DD");
+    const payload = {
+      clientId: "VIAMERICAS",
+      requestType: "BOOKTRANSACTION",
+      amount: state.sendAmount,
+      // amount: state.recvAmount,
+      corrBankId: "ICIC",
+      endDate: "",
+      enteredAmtCurrency: AuthReducer.sendCurrencyCode,
+      expecteddelivery: expDeliveryDateNew,
+      exRateToken: state.exRateToken,
+      exchangeRate: "",
+      frequency: "",
+      methodType: "NOT",
+      noOfTransactions: "0",
+      outwardFlag: "N",
+      paymentMode1: "",
+      paymentMode2: "",
+      personalMessage: "",
+      personalMsg: "",
+      premiumCharge: "0.0",
+      programCode: defaultSettings.programCode,
+      promoCode: state.promoCode,
+      rateBlockFlag: "N",
+      recvCountryCode: AuthReducer.recvCountryCode,
+      recvCountryCurrency: AuthReducer.recvCurrencyCode,
+      recvCurrencyCode: AuthReducer.recvCurrencyCode,
+      recvModeCode: "DC",
+      recvNickName: state.nickName,
+      sendAccId: state.sendAccId,
+      achAccId: state.achAccId,
+      sendCountryCurrency: AuthReducer.sendCurrencyCode,
+      sendCountryCode: AuthReducer.sendCountryCode,
+      sendCurrencyCode: AuthReducer.sendCurrencyCode,
+      // sendModeCode: defaultSettings.sendModeCode,
+      sendModeCode: "ACH",
+      sourceOfFunds: state.sourceFundId,
+      startDate: "",
+      transferType: "O",
+      twofa: "N",
+      txnPurposeDesc: state.purposeName,
+      txnPurposeId: state.purposeID,
+      txnSubPurposeDesc: state.subPurposeName,
+      txnSubPurposeId: state.subPurposeID,
+      txnSubSurposeId: state.subPurposeID,
+      txnType: "TxnPage",
+      userId: state.userID,
+      calculateCostId: state.calculateCostId,
+      finalRecvAmount: state.finalRecvAmount,
+      // groupTxnFee: "",
+    };
+    setLoader((prevState) => prevState + 1);
+    hookBookTransaction.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      dispatch(setKycDoneFrmTxnValidate(false));
+      if (data.status == "S") {
+        if (state.isSelectedBankTransfer) {
+          setState({
+            txnId: data.txnId,
+            txnRefno: data.txnRefno,
+            // isStep: 6,
+          });
+          transactionReceiptDetails(data.txnRefno);
+        } else {
+          setState({
+            txnId: data.txnId,
+            txnRefno: data.txnRefno,
+            isStep: 5,
+          });
+          getGlobalpayData(data.txnId);
+        }
+      } else {
+        onCallComputeExchangeRates("TXNREVIEW", state.isDenefit, state.promoCode, state.sendAmount);
+        notification.error({
+          message: data.errorMessage ? data.errorMessage : "Transaction booking failed.",
+        });
+      }
+    });
+  };
+
+  const bookScheduleTransaction = () => {
+    const payload = {
+      requestType: "BOOKTRANSACTION",
+      sendCountryCode: AuthReducer.sendCountryCode,
+      sendCurrencyCode: AuthReducer.sendCurrencyCode,
+      recvCountryCode: "IN",
+      recvCurrencyCode: "INR",
+      recvModeCode: "DC",
+      recvNickName: state.nickName,
+      promoCode: state.promoCode,
+      amount: state.recvAmount,
+      sendModeCode: "ACH",
+      programCode: "FERSB",
+      enteredAmtCurrency: AuthReducer.sendCurrencyCode,
+      paymentMode1: "",
+      paymentMode2: "",
+      txnPurposeId: state.purposeID,
+      txnPurposeDesc: state.purposeName,
+      txnSubPurposeId: state.subPurposeID,
+      txnSubPurposeDesc: state.subPurposeName,
+      txnSubSurposeId: state.subPurposeID,
+      sourceOfFunds: state.sourceFundId,
+      personalMessage: "",
+      txnType: "TxnPage",
+      sendAccId: state.sendAccId,
+      achAccId: state.achAccId,
+      outwardFlag: "N",
+      corrBankId: "ICIC",
+      exRateToken: state.exRateToken,
+      twofa: "N",
+      sendCountryCurrency: state.groupId == "ICA" ? "CAD" : "GBP",
+      recvCountryCurrency: "INR",
+      startDate: state.scheduleTransactionDate,
+      endDate: "",
+      frequency: "",
+      personalMsg: "schedule my payment",
+      rateBlockFlag: "N",
+      exchangeRate: "",
+      premiumCharge: "0.0",
+      transferType: "O",
+      methodType: "NOT",
+      noOfTransactions: "0",
+      userId: state.userID,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookBookScheduleTransaction.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status == "S") {
+        setState({
+          rpId: data.rpId,
+          rptRefNo: data.rptRefNo,
+          isStep: 6,
+        });
+        scheduleTransactionReceiptDetails(data.rptRefNo);
+      } else {
+        notification.error({
+          message: data.errorMessage ? data.errorMessage : "Book schedule transaction failed.",
+        });
+      }
+    });
+  };
+
+  const getGlobalpayData = (txnId) => {
+    const payload = {
+      requestType: "GLOBALPAYDATA",
+      rgtn: txnId,
+      userId: state.userID,
+    };
+
+    hookGetGlobalpayData.sendRequest(payload, function (data) {
+      if (data.status == "S") {
+        setState({
+          globalPayId: data.responseData[0].GlobalPayId,
+          order_id: data.responseData[0].ORDER_ID,
+          isStep: 5,
+          globalpayData: data.responseData,
+        });
+      } else {
+        notification.error({
+          message: data.errorMessage ? data.errorMessage : "Get global pay data failed.",
+        });
+      }
+    });
+  };
+
+  const globalpayResponse = (globalPayResponse) => {
+    const payload = {
+      requestType: "GlobalPayResponse",
+      rgtn: state.txnId,
+      globalPayId: state.globalPayId,
+      globalPayResponse: window.btoa(JSON.stringify(globalPayResponse)),
+      userId: state.userID,
+    };
+
+    hookGlobalpayResponse.sendRequest(payload, function (data) {
+      if (data.status == "S") {
+        transactionReceiptDetails(state.txnRefno);
+      } else {
+        notification.error({
+          message: data.errorMessage ? data.errorMessage : "Get global pay resonse failed.",
+        });
+      }
+    });
+  };
+
+  const transactionReceiptDetails = (txnRefno) => {
+    const payload = {
+      requestType: "TXNDETAILS",
+      rgtn: "",
+      txnRefNo: txnRefno,
+      userId: state.userID,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookTransactionReceiptDetails.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status == "S") {
+        setState({
+          isStep: 6,
+          txnReceiptDetails: data,
+        });
+        let recvName = data.receiverName.split(" ");
+        let recvFirstChar = recvName[0].charAt(0);
+        let recvLastChar = recvName[recvName.length - 1].charAt(0);
+        setState({ recvNameInitials: `${recvFirstChar}${recvLastChar}` });
+      } else {
+        notification.error({
+          message: data.errorMessage ? data.errorMessage : "Transaction receipt details failed.",
+        });
+      }
+    });
+  };
+
+  const scheduleTransactionReceiptDetails = (rptRefNo) => {
+    const payload = {
+      requestType: "TXNDETAILS",
+      rgtn: "",
+      rptRefNo: rptRefNo,
+      userId: state.userID,
+    };
+
+    hookScheduleTransactionReceiptDetails.sendRequest(payload, function (data) {
+      if (data.status == "S") {
+        setState({
+          isStep: 6,
+          txnReceiptDetails: data,
+        });
+      } else {
+        notification.error({
+          message: data.errorMessage
+            ? data.errorMessage
+            : "Schedule transaction receipt details failed.",
+        });
+      }
+    });
+  };
+  const getSenderKycDetails = (val) => {
+    const payload = {
+      requestType: "SENDERKYCDTLS",
+      userId: AuthReducer.userID,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookGetSenderKycDetails.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.isIfrKycDone === "N") {
+        navigate("/kyc", {
+          state: {
+            autoFillData: val,
+            autoFill: true,
+          },
+        });
+      } else if (
+        data.isIfrKycDone === "Y" &&
+        data.isJumioDone === "Y" &&
+        data.isViaKycDone === "Y"
+      ) {
+        // viAmericaSenderBalanceCheck();
+        // balance check bypass
+        setTimeout(() => {
+          onCallComputeExchangeRates(
+            "TXNREVIEW",
+            state.isDenefit,
+            state.promoCode,
+            state.sendAmount,
+          );
+        }, 500);
+        setState({
+          isStep: 4,
+          pageName: "TXNREVIEW",
+        });
+      }
+    });
+  };
+  const viAmericaSenderBalanceCheck = () => {
+    let payload = {
+      requestType: "VIABALANCECHECK",
+      userId: AuthReducer.userID,
+      accessToken: state.vendorAccessToken,
+      accountId: state.vendorAccountId,
+      amount: state.sendAmount,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookViAmericaSenderBalanceCheck.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status === "S") {
+        setState({
+          isStep: 4,
+          pageName: "TXNREVIEW",
+        });
+
+        setTimeout(() => {
+          onCallComputeExchangeRates(
+            "TXNREVIEW",
+            state.isDenefit,
+            state.promoCode,
+            state.sendAmount,
+          );
+        }, 500);
+      } else {
+        notification.error({
+          message: data.errorMessage ? data.errorMessage : "Via sender balance check failed.",
+        });
+      }
+    });
+  };
+  const userRiskProfile = () => {
+    const userRiskProfileData = {
+      requestType: "RISKPROFILE",
+      userId: AuthReducer.userID,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookUserRiskProfile.sendRequest(userRiskProfileData, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status == "S") {
+        if (data.nextAction === "PROFILE_REVIEW") {
+          //  alert('sdfsdf')
+          setState({
+            isStep: 4,
+            pageName: "TXNREVIEW",
+          });
+
+          setTimeout(() => {
+            onCallComputeExchangeRates(
+              "TXNREVIEW",
+              state.isDenefit,
+              state.promoCode,
+              state.sendAmount,
+            );
+          }, 500);
+        } else if (data.nextAction === "DOB") {
+          navigate("/kyc", {
+            state: {
+              fromPage: "NEW_TRANSACTION",
+              fromPageState: {
+                sendAmount: state.sendAmount,
+                activeStep: 4,
+                ...location.state,
+              },
+            },
+          });
+        } else {
+          navigate("/kyc", {
+            state: {
+              fromPage: "NEW_TRANSACTION",
+              fromPageState: {
+                sendAmount: state.sendAmount,
+                activeStep: 2,
+                ...location.state,
+              },
+            },
+          });
+        }
+        // notification.success({ message: res.data.message });
+        // setState({ nextAction: data.nextAction });
+      } else {
+        // notification.error({ message: res.data.errorMessage })
+      }
+    });
+  };
+
+  const renderConfirmationReciept = () => {
+    switch (AuthReducer.groupId) {
+      case "C2R":
+        return (
+          <ClickRemitBankThankYou state={state} setState={setState} appState={props.appState} />
+        );
+
+      default:
+        break;
+    }
+  };
+
+  return (
+    <Main>
+      <Spinner spinning={loader === 0 ? false : true}>
+        {/* <div className="p-2 inner_title_wrapper">
+        <div className="container">
+          <h2 className="mb-0 inner_title">
+            {state.rptRefNo == "" ? state.innerTitle : "Initiated"}
+          </h2>
+        </div>
+      </div> */}
+        {/* <Spin spinning={loading} delay={100}> */}
+        {/* <DefaultLayout
+          accessToken={props.appState.accessToken}
+          isLoggedIn={props.appState.isLoggedIn}
+          publicKey={props.appState.publicKey}
+        > */}
+        <div className="">
+          {state.isStep == 1 && (
+            <NewTransaction
+              form={form}
+              state={state}
+              loader={loader}
+              setLoader={setLoader}
+              setState={setState}
+              setIsModalVisible={setIsModalVisible}
+              onCallComputeExchangeRates={onCallComputeExchangeRates}
+              getReceiverLists={getReceiverLists}
+              getBankAccountLists={getBankAccountLists}
+              getAchAccountLists={getAchAccountLists}
+              getSourceOFFundLists={getSourceOFFundLists}
+              getPaymentOption={getPaymentOption}
+              applyPromo={applyPromo}
+              userRiskProfile={userRiskProfile}
+              getSenderKycDetails={getSenderKycDetails}
+              viAmericaTransactionValidate={viAmericaTransactionValidate}
+              ViaCalculateCost={ViaCalculateCost}
+              // onShowStep={onShowStep}
+              getPurposeLists={getPurposeLists}
+              recipentData={location.state}
+              ViaPriceQuote={ViaPriceQuote}
+            />
+          )}
+          {state.isStep == 4 && (
+            <TransactionConfirm
+              state={state}
+              setState={setState}
+              getReceiverLists={getReceiverLists}
+              // getBankAccountLists={getBankAccountLists}
+              setIsModalVisible={setIsModalVisible}
+              ViaCalculateCost={ViaCalculateCost}
+              bookTransaction={bookTransaction}
+              bookScheduleTransaction={bookScheduleTransaction}
+              // onShowStep={onShowStep}
+            />
+          )}
+
+          {state.isStep == 5 &&
+            state.globalpayData.length > 0 &&
+            {
+              /* <Checkout
+                state={state}
+                setState={setState}
+                appState={props.appState}
+                globalpayResponse={globalpayResponse}
+                // onShowStep={onShowStep}
+              /> */
+            }}
+          {
+            state.isStep == 6 && state.isSelectedBankTransfer === false
+              ? Object.keys(state.txnReceiptDetails).length > 0 &&
+                {
+                  /* <ThankYou
+                    state={state}
+                    setState={setState}
+                    appState={props.appState}
+                  /> */
+                }
+              : state.isStep == 6 && renderConfirmationReciept()
+            // Object.keys(state.txnReceiptDetails).length > 0 && (
+            //   {/* <>
+            //     {state.rptRefNo == "" ? (
+            //       renderConfirmationReciept()
+            //     ) : (
+            //       <ThankYouScheduleTransaction
+            //         state={state}
+            //         setState={setState}
+            //         appState={props.appState}
+            //       />
+            //     )}
+            //   </> */}
+            // )
+          }
+        </div>
+        {/* </DefaultLayout> */}
+        {/* </Spin> */}
+
+        <Modal
+          title="Breakup Detail"
+          visible={isModalVisible}
+          onOk={() => setIsModalVisible(false)}
+          onCancel={() => setIsModalVisible(false)}
+          footer={false}
+        >
+          <Row>
+            <Col span={12}>
+              <p>You Send (A)</p>
+            </Col>
+            <Col span={12} className="text-end">
+              <p className="fw-500">
+                {state.sendAmount} {AuthReducer.sendCurrencyCode}
+              </p>
+            </Col>
+            <Col span={12}>
+              <p>Transfer Fee (B)</p>
+            </Col>
+            <Col span={12} className="text-end">
+              <p className="fw-500">
+                {state.totalFee} {AuthReducer.sendCurrencyCode}
+              </p>
+            </Col>
+            <Divider />
+
+            <Col span={15}>
+              <h5 className="fw-500">Total Amount Payable (A+B)</h5>
+            </Col>
+            <Col span={9} className="text-end">
+              <h5 className="fw-500 text-primary">
+                {state.amountPayable} {AuthReducer.sendCurrencyCode}
+              </h5>
+            </Col>
+          </Row>
+          <Divider />
+          <Row className="Privailing-text">
+            <Col span={15}>
+              <h6 className=" text-primary fw-500">Prevailing Exchange rate (C)</h6>
+            </Col>
+            <Col span={9} className="text-end">
+              <h6 className="fw-500 text-primary">
+                {state.displayExRate} {AuthReducer.recvCurrencyCode}
+              </h6>
+            </Col>
+          </Row>
+          {/* <Row className="Privailing-text mt-3">
+            <Col span={15}>
+              <h6 className=" text-primary fw-500">Expected Delivery Date</h6>
+            </Col>
+            <Col span={9} className="text-end">
+              <h6 className="fw-500 text-primary">{state.expectedDeliveryDate}</h6>
+            </Col>
+          </Row> */}
+          {state.promoValueWithDesc != "" && (
+            <>
+              <Row className="Privailing-text">
+                <Col span={15}>
+                  <h6 className=" text-primary fw-500">Preferential Rate</h6>
+                </Col>
+                <Col span={9} className="text-end">
+                  <h6 className="fw-500 text-primary">
+                    {state.promoValue} {AuthReducer.recvCurrencyCode}
+                  </h6>
+                </Col>
+              </Row>
+              <Row className="Privailing-text">
+                <Col span={15}>
+                  <h6 className=" text-primary fw-500">Applied Exchange Rate</h6>
+                </Col>
+                <Col span={9} className="text-end">
+                  <h6 className="fw-500 text-primary">
+                    {state.exRateWithPromo} {AuthReducer.recvCurrencyCode}
+                  </h6>
+                </Col>
+              </Row>
+
+              <Row>
+                <Col span={12}>
+                  <p>You Recieve in {AuthReducer.recvCurrencyCode} (A*C)</p>
+                </Col>
+                <Col span={12} className="text-end">
+                  <p className="fw-500">
+                    {state.netRecvAmount} {AuthReducer.recvCurrencyCode}
+                  </p>
+                </Col>
+
+                <Col span={15}>
+                  <p className="fw-500">M2I Brnefit (D)</p>
+                </Col>
+                <Col span={9} className="text-end">
+                  <p className="fw-500">
+                    {state.benefit} {AuthReducer.recvCurrencyCode}
+                  </p>
+                </Col>
+              </Row>
+            </>
+          )}
+          <Divider />
+          <Row className="Privailing-text">
+            <Col span={15}>
+              <h5 className="fw-500">
+                Reciever Gets {state.promoValueWithDesc == "" ? "(A*C)" : "(A*C)+D"}
+              </h5>
+            </Col>
+            <Col span={9} className="text-end">
+              <h5 className="fw-500 text-primary">
+                {state.recvAmount} {AuthReducer.recvCurrencyCode}
+              </h5>
+            </Col>
+          </Row>
+        </Modal>
+        {state.isMigratedModal && <MigratedData state={state} setState={setState} />}
+      </Spinner>
+    </Main>
+  );
+}
