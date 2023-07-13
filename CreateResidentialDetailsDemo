@@ -1,0 +1,376 @@
+import React, { useEffect, useReducer, useState } from "react";
+import BackArrow from "../../../assets/images/click2remit/Back_arrow.svg";
+import CustomInput from "../../../reusable/CustomInput";
+import FloatInput from "../../../reusable/FloatInput";
+import { Checkbox, Form, notification, Select } from "antd";
+import { inputValidations } from "../../../services/validations/validations";
+import { useDispatch, useSelector } from "react-redux";
+import useHttp from "../../../hooks/useHttp";
+import { GuestAPI } from "../../../apis/GuestAPI";
+import Spinner from "../../../reusable/Spinner";
+import { setSendCountryCode, setSendCurrencyCode } from "../../../reducers/userReducer";
+import { COUNTRY } from "../../../services/Country";
+const { Option } = Select;
+
+const CreateResidentialDetails = (props) => {
+  const { form } = props;
+  const dispatch = useDispatch();
+  const AuthReducer = useSelector((state) => state.user);
+  const hookGetUserCountryList = useHttp(GuestAPI.countryList);
+  const hookGetCountryStates = useHttp(GuestAPI.countryStates);
+  const hookGetStateCities = useHttp(GuestAPI.stateCities);
+  const [loader, setLoader] = useState(0);
+  const [state, setState] = useReducer((state, newState) => ({ ...state, ...newState }), {
+    phoneCodes: [],
+    sendCountryList: [],
+    cityLists: [],
+    stateLists: [],
+    sendCountry: "",
+  });
+
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    getUserCountryList();
+  }, []);
+  const getUserCountryList = () => {
+    const countryPayload = {
+      requestType: "COUNTRYLIST",
+    };
+    setLoader((prevState) => prevState + 1);
+    hookGetUserCountryList.sendRequest(countryPayload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status === "S") {
+        setState({ sendCountryList: data.responseData });
+        if(data.responseData.length===1){
+          setState({ sendCountry: data.responseData[0].sendCountry});
+          dispatch(setSendCountryCode(data.responseData[0].sendCountry));
+          dispatch(setSendCurrencyCode(COUNTRY[data.responseData[0].sendCountry].countryCurrency));
+          form.setFieldsValue({ state: "", city: "",country:data.responseData[0].sendCountry });
+        }
+      } else {
+        notification.error({ message: data.errorMessage?data.errorMessage:"Get user country list failed." });
+      }
+    });
+  };
+  useEffect(() => {
+    if (state.sendCountry || AuthReducer.sendCountryCode) {
+      getStateLists();
+    }
+  }, [state.sendCountry]);
+  const onsubmitHandler = (values) => {
+    props.setState({ residentialDetails: values, activeStepForm: 3 });
+  };
+  const getStateLists = () => {
+    let payload = {
+      requestType: "STATELIST",
+      countryCode: state.sendCountry ? state.sendCountry : AuthReducer.sendCountryCode,
+      keyword: "",
+    };
+    setLoader((prevState) => prevState + 1);
+    hookGetCountryStates.sendRequest(payload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status === "S") {
+        let activeState = data.responseData.filter((state) => {
+          return state.isActive == "Y";
+        });
+        setState({ stateLists: activeState });
+      } else {
+        notification.error({ message: data.errorMessage?data.errorMessage:"Get country states failed." });
+      }
+    });
+  };
+  const onSelectStateHandler = async (stateCode) => {
+    form.setFieldsValue({ city: "" });
+    const cityPayload = {
+      requestType: "CITILIST",
+      countryCode: AuthReducer.sendCountryCode,
+      stateCode: stateCode,
+    };
+    setLoader((prevState) => prevState + 1);
+    hookGetStateCities.sendRequest(cityPayload, function (data) {
+      setLoader((prevState) => prevState - 1);
+      if (data.status === "S") {
+        props.setState({
+          cityLists: data.responseData,
+        });
+      } else {
+        notification.error({ message: data.errorMessage?data.errorMessage:"Get State cities failed." });
+        props.setState({
+          cityLists: [],
+        });
+      }
+    });
+  };
+  return (
+    <div class="col-md-8 col-sm-12 col-lg-8 mobile-order-2">
+      <div class="CR-account-form CR-otp-form">
+        <Spinner spinning={loader === 0 ? false : true}>
+          <Form
+            form={form}
+            onFinish={(values) => {
+              onsubmitHandler(values);
+            }}
+          >
+            <fieldset>
+              <ul class="row">
+                <li class="col-md-12 col-sm-12 col-lg-12 ">
+                  <h4 class="text-black ">Residential details</h4>
+                </li>
+                <li class="col-md-12 col-sm-12 col-lg-12">
+                  <p class="text-left">
+                    Enter your address details to create your new Click2Remit account.
+                  </p>
+                </li>
+                <legend></legend>
+                <li class="col-md-12 col-sm-12 col-lg-12">
+                  <CustomInput
+                    placeholder="Select your country"
+                    label="Select your country"
+                    showLabel={false}
+                    name="country"
+                    required
+                  >
+                    <FloatInput
+                      type="select"
+                      placeholder="Select your country"
+                      label="Select your country"
+                      name="country"
+                      onChange={(e) => {
+                        console.log("RRRR",e)
+                        setState({ sendCountry: e });
+                        dispatch(setSendCountryCode(e));
+                        dispatch(setSendCurrencyCode(COUNTRY[e].countryCurrency));
+                        form.setFieldsValue({ state: "", city: "" });
+                      }}
+                      required
+                    >
+                      {state.sendCountryList.map((clist, i) => {
+                        return (
+                          <Option
+                            key={i}
+                            value={clist.sendCountry}
+                          >{`${clist.countryName}`}</Option>
+                        );
+                      })}
+                    </FloatInput>
+                  </CustomInput>
+                </li>
+                <li class="col-md-12 col-sm-12 col-lg-12">
+                  <CustomInput
+                    showLabel={false}
+                    name="address1"
+                    label="Address Line 1"
+                    validationRules={[
+                      ({ getFieldValue }) => ({
+                        validator(rule, value) {
+                          let message = "";
+                          let obj = inputValidations.validateAddress(value ? value : "");
+                          message = obj.message;
+                          if (obj.status === "S") {
+                            return Promise.resolve();
+                          }
+                          return Promise.reject(message);
+                        },
+                      }),
+                    ]}
+                  >
+                    <FloatInput placeholder="Address Line 1" />
+                  </CustomInput>
+                </li>
+                <li class="col-md-12 col-sm-12 col-lg-12">
+                  <CustomInput
+                    showLabel={false}
+                    name="address2"
+                    label="Address Line 2"
+                    validationRules={[
+                      ({ getFieldValue }) => ({
+                        validator(rule, value) {
+                          let message = "";
+                          let obj = inputValidations.validateAddress(value ? value : "");
+                          message = obj.message;
+                          if (obj.status === "S") {
+                            return Promise.resolve();
+                          }
+                          return Promise.reject(message);
+                        },
+                      }),
+                    ]}
+                  >
+                    <FloatInput type="text" placeholder="Address Line 2" />
+                  </CustomInput>
+                </li>
+                {/* <li class="col-md-12 col-sm-12 col-lg-12">
+                  <CustomInput
+                    showLabel={false}
+                    name="address3"
+                    label="Address Line 3"
+                    validationRules={[
+                      ({ getFieldValue }) => ({
+                        validator(rule, value) {
+                          // validate space before and after string
+                          let startSpace = /^\s/;
+                          let endSpace = / $/;
+                          if (startSpace.test(value) || endSpace.test(value)) {
+                            return Promise.reject("Space not allow before and after address.");
+                          }
+
+                          return Promise.resolve();
+                        },
+                      }),
+                      ({ getFieldValue }) => ({
+                        validator(rule, value) {
+                          const validStr =
+                            ' abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.0123456789/-?()",+#&_[]\n\r';
+                          const charArray = value ? value : "";
+                          const strLen = charArray.length;
+                          for (let i = 0; i < strLen; i++) {
+                            if (validStr.indexOf(charArray[i]) === -1) {
+                              return Promise.reject("Please enter valid address formats.");
+                            }
+                          }
+
+                          return Promise.resolve();
+                        },
+                      }),
+                      {
+                        min: 3,
+                        max: 100,
+                        message: "Address should be between 3 and 100 characters long.",
+                      },
+                    ]}
+                  >
+                    <FloatInput type="text" placeholder="Address Line 3" />
+                  </CustomInput>
+                </li> */}
+                <li class="col-md-12 col-sm-12 col-lg-12">
+                  <CustomInput
+                    showLabel={false}
+                    name="zipcode"
+                    label="Zipcode"
+                    validationRules={[
+                      ...inputValidations.zipCode(AuthReducer.sendCountryCode),
+                      ({ getFieldValue }) => ({
+                        validator(rule, value) {
+                          // validate space before and after string
+                          let startSpace = /^\s/;
+                          let endSpace = / $/;
+                          if (startSpace.test(value) || endSpace.test(value)) {
+                            return Promise.reject(
+                              "Space not allowed before and after the Zipcode.",
+                            );
+                          }
+
+                          return Promise.resolve();
+                        },
+                      }),
+                    ]}
+                    // min={5}
+                    // max={5}
+                    required
+                  >
+                    <FloatInput type="text" placeholder="Zipcode" />
+                  </CustomInput>
+                </li>
+
+                <li class="col-md-12 col-sm-12 col-lg-12">
+                  <CustomInput name="state" label="State" showLabel={false} required>
+                    <FloatInput
+                      type="select"
+                      autoComplete="none"
+                      placeholder="State"
+                      label="State"
+                      className="w-100"
+                      onSelect={onSelectStateHandler}
+                      filterOption={(inputValue, option) =>
+                        option.value.toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
+                      }
+                    >
+                      {state.stateLists.map((st, i) => {
+                        return <Option key={i} value={st.state}>{`${st.state}`}</Option>;
+                      })}
+                    </FloatInput>
+                  </CustomInput>
+                </li>
+
+                <li class="col-md-12 col-sm-12 col-lg-12">
+                  <CustomInput name="city" label="City" showLabel={false} required>
+                    <FloatInput
+                      type="select"
+                      placeholder="City"
+                      label="City"
+                      className="w-100"
+                      autoComplete="none"
+                      filterOption={(inputValue, option) =>
+                        option.value.toUpperCase().indexOf(inputValue.toUpperCase()) !== -1
+                      }
+                    >
+                      {props.state?.cityLists?.map((st, i) => {
+                        return <Option key={i} value={st.city}>{`${st.city}`}</Option>;
+                      })}
+                    </FloatInput>
+                  </CustomInput>
+                </li>
+                <li class="col-md-12 col-sm-12 col-lg-12">
+                  <div className="row">
+                    <Form.Item
+                      className="form-item"
+                      name="readTermsConditions"
+                      valuePropName="checked"
+                      rules={[
+                        {
+                          validator: (_, value) =>
+                            value
+                              ? Promise.resolve()
+                              : Promise.reject(new Error("Please confirm terms and conditions.")),
+                        },
+                      ]}
+                    >
+                      <Checkbox>
+                        I accept the{" "}
+                        <a
+                          target="_blank"
+                          href="https://s3.amazonaws.com/cdn.govianex.com/terms-and-conditions/www/viamericas_terms-and-conditions.pdf"
+                        >
+                          Terms and Conditions
+                        </a>{" "}
+                        and
+                        <a
+                          target="_blank"
+                          href="https://s3.amazonaws.com/cdn.govianex.com/privacy-policy/www/viamericas_privacy-policy.pdf"
+                        >
+                          {" "}
+                          Privacy Statement
+                        </a>
+                      </Checkbox>
+                    </Form.Item>
+                  </div>
+                </li>
+              </ul>
+              <div class="bottom_panel">
+                <div class="d-flex justify-content-between align-items-baseline">
+                  <span
+                     class="Back_arrow"
+                    onClick={() => {
+                      props.setState({ activeStepForm: 1 });
+                    }}
+                  >
+                    <img src={BackArrow} alt="backArrow" />
+                    Back
+                  </span>
+                  <button
+                    htmlType="submit"
+                    class="btn btn-primary CR-primary-btn"
+                    style={{ width: "100px", margin: "0!important" }}
+                  >
+                    Proceed
+                  </button>
+                </div>
+              </div>
+            </fieldset>
+          </Form>
+        </Spinner>
+      </div>
+    </div>
+  );
+};
+export default CreateResidentialDetails;
